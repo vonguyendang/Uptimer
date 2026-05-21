@@ -10,7 +10,7 @@
 
 Giám sát dịch vụ của bạn, hiển thị trạng thái thời gian thực cho khách truy cập và nhận thông báo khi có sự cố — tất cả đều chạy trên Cloudflare Workers + Pages + D1 mà không cần vận hành máy chủ (zero ops).
 
-[Triển khai Nhanh](#triển-khai-nhanh-5-bước) · [Phát triển Cục bộ](#phát-triển-cục-bộ) · [Tài liệu](#tài-liệu) · [Đóng góp](CONTRIBUTING.vi-VN.md)
+[Hướng dẫn nhanh](docs/quickstart.vi-VN.md) · [Triển khai Nhanh](#triển-khai-nhanh-5-bước) · [Phát triển Cục bộ](#phát-triển-cục-bộ) · [Tài liệu](#tài-liệu) · [Đóng góp](CONTRIBUTING.vi-VN.md)
 
 English | [中文](README.zh-CN.md) | **[Tiếng Việt](README.vi-VN.md)**
 
@@ -191,6 +191,7 @@ Các địa chỉ mặc định:
 
 | Tài liệu                                                                                                   | Mô tả                                                      |
 | ---------------------------------------------------------------------------------------------------------- | ---------------------------------------------------------- |
+| [Hướng dẫn nhanh](docs/quickstart.vi-VN.md)                                                                | Hướng dẫn nhanh triển khai và cấu hình domain để kiểm tra   |
 | [Hướng dẫn Triển khai](docs/deploy-github-actions.vi-VN.md) ([English](docs/deploy-github-actions.md))     | Hướng dẫn chi tiết triển khai qua GitHub Actions           |
 | [Tham chiếu Cấu hình](docs/configuration-reference.vi-VN.md) ([English](docs/configuration-reference.md)) | Toàn bộ các tham số có thể cấu hình (secrets, biến, cài đặt)|
 | [Hệ thống Thông báo](docs/notifications.vi-VN.md) ([English](docs/notifications.md))                       | Thiết lập Webhook, template, chữ ký, xử lý sự cố            |
