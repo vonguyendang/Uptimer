@@ -189,3 +189,57 @@ export function defaultMessageForEvent(
     }
   }
 }
+
+export function shouldSendEvent(
+  config: { enabled_events?: string[] | undefined },
+  eventType: string,
+): boolean {
+  if (eventType === 'test.ping') return true;
+  const enabled = config.enabled_events;
+  if (!enabled || enabled.length === 0) return true;
+  return enabled.includes(eventType);
+}
+
+export function buildNotificationMessage(args: {
+  channelId: number;
+  channelName: string;
+  messageTemplate?: string | undefined;
+  eventType: string;
+  eventKey: string;
+  payload: unknown;
+  now: number;
+}): { message: string; vars: Record<string, unknown> } {
+  const rawPayloadForVars = args.payload;
+  const payloadRecord =
+    rawPayloadForVars && typeof rawPayloadForVars === 'object' && !Array.isArray(rawPayloadForVars)
+      ? (rawPayloadForVars as Record<string, unknown>)
+      : {};
+
+  const baseVars: Record<string, unknown> = {
+    ...payloadRecord,
+    payload: rawPayloadForVars,
+    channel: { id: args.channelId, name: args.channelName },
+    event: args.eventType,
+    event_id: args.eventKey,
+    timestamp: args.now,
+  };
+
+  const defaultMessage = defaultMessageForEvent(args.eventType, baseVars);
+
+  const message = args.messageTemplate
+    ? renderStringTemplate(args.messageTemplate, {
+        ...baseVars,
+        message: defaultMessage,
+        default_message: defaultMessage,
+      })
+    : defaultMessage;
+
+  const vars = {
+    ...baseVars,
+    message,
+    default_message: defaultMessage,
+  };
+
+  return { message, vars };
+}
+

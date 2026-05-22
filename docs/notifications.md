@@ -1,27 +1,27 @@
 # Notification System
 
-English | [中文](notifications.zh-CN.md)
+English | [中文](notifications.zh-CN.md) | [Tiếng Việt](notifications.vi-VN.md)
 
-Uptimer's notification system sends webhook alerts when monitor states change or incidents are created/updated. This document covers event types, channel configuration, payload construction, template variables, webhook signing, and troubleshooting.
+Uptimer's notification system sends alerts when monitor states change or incidents are created/updated. This document covers event types, channel types, channel configuration, payload construction, template variables, webhook signing, and troubleshooting.
 
 ## Overview
 
 The notification system:
 
-- Sends alerts on critical state changes (UP->DOWN, DOWN->UP) and incident lifecycle events
-- Supports per-channel configuration: HTTP method, timeout, headers, payload format, templates, event filtering, and optional signing
+- Sends alerts on critical state changes (UP→DOWN, DOWN→UP) and incident lifecycle events
+- Supports **three channel types**: Webhook, Email, and Telegram
+- Supports per-channel configuration: event filtering, templates, and type-specific settings
 - Guarantees idempotent delivery: each event is sent to each channel at most once (via `notification_deliveries` unique constraint)
 
 ### Flow
 
 1. System produces an event (eventType + eventKey + payload)
-2. Find all active webhook channels
+2. Find all active channels (webhook + email + telegram)
 3. For each channel:
    - Filter by `enabled_events`
    - Claim a delivery slot in `notification_deliveries` (idempotent)
-   - Render templates (message, payload, headers)
-   - Build URL/body based on `payload_type`
-   - Send via `fetch` (no-store + timeout)
+   - Render templates (message, payload/body, headers)
+   - Dispatch via the appropriate sender (fetch / Resend API / Telegram Bot API)
    - Record delivery result (success/failed)
 
 ## Event Types
@@ -61,7 +61,17 @@ The test endpoint generates a `test.ping` event with sample data and returns the
 
 ## Channel Configuration
 
-Webhook channel `config_json` fields (validated by Zod):
+All channels share common fields:
+
+| Field            | Required | Default | Description                                                                       |
+| ---------------- | -------- | ------- | --------------------------------------------------------------------------------- |
+| `name`           | Yes      | —       | Display name                                                                      |
+| `type`           | Yes      | —       | `webhook`, `email`, or `telegram`                                                 |
+| `is_active`      | No       | `true`  | Whether this channel receives deliveries                                          |
+| `config_json`    | Yes      | —       | Type-specific JSON object (see sections below)                                    |
+| `enabled_events` | No       | —       | Event whitelist array stored inside `config_json`. Empty = all events.            |
+
+### Webhook `config_json` fields
 
 | Field              | Required | Default | Description                                                                            |
 | ------------------ | -------- | ------- | -------------------------------------------------------------------------------------- |
@@ -74,6 +84,61 @@ Webhook channel `config_json` fields (validated by Zod):
 | `payload_template` | No       | —       | Custom payload template (see below)                                                    |
 | `enabled_events`   | No       | —       | Event whitelist array. Empty = all events. `test.ping` always passes.                  |
 | `signing`          | No       | —       | `{ enabled: boolean, secret_ref: string }` — HMAC-SHA256 signing                       |
+
+### Email `config_json` fields
+
+Email is delivered via [Resend](https://resend.com) or [SendGrid](https://sendgrid.com). You must configure one of them.
+
+| Field              | Required | Default  | Description                                                                |
+| ------------------ | -------- | -------- | -------------------------------------------------------------------------- |
+| `provider`         | Yes      | —        | `resend` or `sendgrid`                                                     |
+| `api_key_ref`      | Yes      | —        | Name of the Worker secret holding the Resend/SendGrid API key              |
+| `from`             | Yes      | —        | Sender address, e.g. `Uptimer <alerts@example.com>`                        |
+| `to`               | Yes      | —        | Array of recipient email addresses (1–10)                                  |
+| `subject_template` | No       | —        | Template string for email subject. Supports `{{variables}}`.               |
+| `message_template` | No       | —        | Template string for the `message` variable used in the body                |
+| `enabled_events`   | No       | —        | Event whitelist array. Empty = all events. `test.ping` always passes.      |
+
+**Example:**
+
+```json
+{
+  "provider": "resend",
+  "api_key_ref": "RESEND_API_KEY",
+  "from": "Uptimer <alerts@example.com>",
+  "to": ["ops@example.com"],
+  "subject_template": "[{{event}}] {{monitor.name}} is {{state.status}}",
+  "message_template": "Monitor **{{monitor.name}}** is now {{state.status}}."
+}
+```
+
+> The Worker secret name (e.g. `RESEND_API_KEY`) must be set in your Cloudflare Worker Secrets or in `.dev.vars` for local development. Never hardcode API keys.
+
+### Telegram `config_json` fields
+
+Telegram messages are delivered via the [Bot API](https://core.telegram.org/bots/api) using `sendMessage`.
+
+| Field              | Required | Default    | Description                                                              |
+| ------------------ | -------- | ---------- | ------------------------------------------------------------------------ |
+| `bot_token_ref`    | Yes      | —          | Name of the Worker secret holding the Bot token (`123456:ABC-def...`)    |
+| `chat_id`          | Yes      | —          | Telegram chat ID (user, group, or channel). Negative for supergroups.   |
+| `parse_mode`       | No       | `Markdown` | `Markdown`, `MarkdownV2`, or `HTML`                                      |
+| `message_template` | No       | —          | Template for the message text. Supports `{{variables}}`.                 |
+| `enabled_events`   | No       | —          | Event whitelist array. Empty = all events. `test.ping` always passes.    |
+
+**Example:**
+
+```json
+{
+  "bot_token_ref": "TELEGRAM_BOT_TOKEN",
+  "chat_id": "-1001234567890",
+  "parse_mode": "Markdown",
+  "message_template": "*[{{event}}]* `{{monitor.name}}` is *{{state.status}}*"
+}
+```
+
+> To get your `chat_id`: add your bot to the group/channel, send a message, then call `https://api.telegram.org/bot<TOKEN>/getUpdates` and read the `chat.id` field.
+
 
 ## Payload Modes
 
@@ -289,16 +354,20 @@ wrangler d1 execute uptimer --local \
 
 ## Known Limitations
 
-- Only webhook channels are supported (no built-in email, Telegram, etc.)
 - Template substitution always produces strings (see Type Caveat above)
 - `payload_template` JSON depth is capped at 32 levels
+- Email delivery uses HTTPS APIs only (Resend or SendGrid); plain SMTP is not supported
+- Telegram bot must have permission to post in the target chat/channel
 
 ## Source Code Reference
 
-| Component        | File                                 |
-| ---------------- | ------------------------------------ |
-| Webhook dispatch | `apps/worker/src/notify/webhook.ts`  |
-| Idempotent dedup | `apps/worker/src/notify/dedupe.ts`   |
-| Template engine  | `apps/worker/src/notify/template.ts` |
-| Config schema    | `packages/db/src/json.ts`            |
-| Test endpoint    | `apps/worker/src/routes/admin.ts`    |
+| Component           | File                                   |
+| ------------------- | -------------------------------------- |
+| Notification router | `apps/worker/src/notify/dispatch.ts`   |
+| Webhook sender      | `apps/worker/src/notify/webhook.ts`    |
+| Email sender        | `apps/worker/src/notify/email.ts`      |
+| Telegram sender     | `apps/worker/src/notify/telegram.ts`   |
+| Idempotent dedup    | `apps/worker/src/notify/dedupe.ts`     |
+| Template engine     | `apps/worker/src/notify/template.ts`   |
+| Config schema       | `packages/db/src/json.ts`              |
+| Test endpoint       | `apps/worker/src/routes/admin.ts`      |

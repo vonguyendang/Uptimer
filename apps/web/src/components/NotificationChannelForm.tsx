@@ -3,6 +3,9 @@ import type {
   CreateNotificationChannelInput,
   NotificationChannel,
   WebhookChannelConfig,
+  TelegramChannelConfig,
+  EmailChannelConfig,
+  AnyNotificationChannelConfig,
 } from '../api/types';
 import { useI18n } from '../app/I18nContext';
 import {
@@ -71,38 +74,64 @@ export function NotificationChannelForm({
 }: NotificationChannelFormProps) {
   const { t } = useI18n();
   const [name, setName] = useState(channel?.name ?? '');
-  const [url, setUrl] = useState(channel?.config_json.url ?? '');
+  const [type, setType] = useState<'webhook' | 'telegram' | 'email'>(
+    channel?.type ?? 'webhook',
+  );
+
+  // Webhook States
+  const isExistingWebhook = channel?.type === 'webhook';
+  const webhookConfig = isExistingWebhook ? (channel.config_json as WebhookChannelConfig) : null;
+
+  const [url, setUrl] = useState(webhookConfig?.url ?? '');
   const [method, setMethod] = useState<NonNullable<WebhookChannelConfig['method']>>(
-    channel?.config_json.method ?? 'POST',
+    webhookConfig?.method ?? 'POST',
   );
-
-  const [timeoutMs, setTimeoutMs] = useState<number>(channel?.config_json.timeout_ms ?? 5000);
+  const [timeoutMs, setTimeoutMs] = useState<number>(webhookConfig?.timeout_ms ?? 5000);
   const [payloadType, setPayloadType] = useState<NonNullable<WebhookChannelConfig['payload_type']>>(
-    channel?.config_json.payload_type ?? 'json',
+    webhookConfig?.payload_type ?? 'json',
   );
-
   const [headersJson, setHeadersJson] = useState(
-    safeJsonStringify(channel?.config_json.headers ?? {}),
+    safeJsonStringify(webhookConfig?.headers ?? {}),
+  );
+  const [payloadTemplateJson, setPayloadTemplateJson] = useState(
+    webhookConfig?.payload_template !== undefined
+      ? safeJsonStringify(webhookConfig.payload_template)
+      : '',
+  );
+  const [signingEnabled, setSigningEnabled] = useState<boolean>(
+    webhookConfig?.signing?.enabled ?? false,
+  );
+  const [signingSecretRef, setSigningSecretRef] = useState<string>(
+    webhookConfig?.signing?.secret_ref ?? '',
   );
 
+  // Telegram States
+  const isExistingTelegram = channel?.type === 'telegram';
+  const telegramConfig = isExistingTelegram ? (channel.config_json as TelegramChannelConfig) : null;
+
+  const [botToken, setBotToken] = useState(telegramConfig?.bot_token ?? '');
+  const [chatId, setChatId] = useState(telegramConfig?.chat_id ?? '');
+
+  // Email States
+  const isExistingEmail = channel?.type === 'email';
+  const emailConfig = isExistingEmail ? (channel.config_json as EmailChannelConfig) : null;
+
+  const [emailProvider, setEmailProvider] = useState<'resend' | 'sendgrid'>(
+    emailConfig?.provider ?? 'resend',
+  );
+  const [emailApiKey, setEmailApiKey] = useState(emailConfig?.api_key ?? '');
+  const [emailFrom, setEmailFrom] = useState(emailConfig?.from ?? '');
+  const [emailTo, setEmailTo] = useState(emailConfig?.to ?? '');
+  const [emailSubjectTemplate, setEmailSubjectTemplate] = useState(
+    emailConfig?.subject_template ?? '',
+  );
+
+  // Shared States
   const [messageTemplate, setMessageTemplate] = useState(
     channel?.config_json.message_template ?? '',
   );
-  const [payloadTemplateJson, setPayloadTemplateJson] = useState(
-    channel?.config_json.payload_template !== undefined
-      ? safeJsonStringify(channel.config_json.payload_template)
-      : '',
-  );
-
   const [enabledEvents, setEnabledEvents] = useState<NotificationEventType[]>(
     channel?.config_json.enabled_events ?? [],
-  );
-
-  const [signingEnabled, setSigningEnabled] = useState<boolean>(
-    channel?.config_json.signing?.enabled ?? false,
-  );
-  const [signingSecretRef, setSigningSecretRef] = useState<string>(
-    channel?.config_json.signing?.secret_ref ?? '',
   );
 
   const headersParse = useMemo(() => {
@@ -152,40 +181,85 @@ export function NotificationChannelForm({
     return { ok: true as const, value: parsed };
   }, [payloadTemplateJson, t]);
 
-  const canSubmit = headersParse.ok && payloadTemplateParse.ok;
+  const canSubmit = useMemo(() => {
+    if (!name.trim()) return false;
+    if (type === 'webhook') {
+      return !!url.trim() && headersParse.ok && payloadTemplateParse.ok;
+    }
+    if (type === 'telegram') {
+      return !!botToken.trim() && !!chatId.trim();
+    }
+    if (type === 'email') {
+      return !!emailApiKey.trim() && !!emailFrom.trim() && !!emailTo.trim();
+    }
+    return false;
+  }, [
+    name,
+    type,
+    url,
+    headersParse.ok,
+    payloadTemplateParse.ok,
+    botToken,
+    chatId,
+    emailApiKey,
+    emailFrom,
+    emailTo,
+  ]);
 
   const handleSubmit = (e: React.FormEvent) => {
     e.preventDefault();
     if (!canSubmit) return;
 
-    const config: WebhookChannelConfig = {
-      url,
-      method,
-      timeout_ms: timeoutMs,
-      payload_type: payloadType,
-    };
+    let config: AnyNotificationChannelConfig;
 
-    if (headersParse.ok && Object.keys(headersParse.value).length > 0) {
-      config.headers = headersParse.value;
+    if (type === 'webhook') {
+      const webhookConfig: WebhookChannelConfig = {
+        url,
+        method,
+        timeout_ms: timeoutMs,
+        payload_type: payloadType,
+      };
+
+      if (headersParse.ok && Object.keys(headersParse.value).length > 0) {
+        webhookConfig.headers = headersParse.value;
+      }
+
+      if (payloadTemplateParse.ok && payloadTemplateParse.value !== undefined) {
+        webhookConfig.payload_template = payloadTemplateParse.value;
+      }
+
+      if (signingEnabled) {
+        webhookConfig.signing = { enabled: true, secret_ref: signingSecretRef };
+      }
+
+      config = webhookConfig;
+    } else if (type === 'telegram') {
+      config = {
+        bot_token: botToken.trim(),
+        chat_id: chatId.trim(),
+      };
+    } else {
+      const emailConfig: EmailChannelConfig = {
+        provider: emailProvider,
+        api_key: emailApiKey.trim(),
+        from: emailFrom.trim(),
+        to: emailTo.trim(),
+      };
+      if (emailSubjectTemplate.trim()) {
+        emailConfig.subject_template = emailSubjectTemplate.trim();
+      }
+      config = emailConfig;
     }
 
     if (messageTemplate.trim()) {
       config.message_template = messageTemplate;
     }
 
-    if (payloadTemplateParse.ok && payloadTemplateParse.value !== undefined) {
-      config.payload_template = payloadTemplateParse.value;
-    }
-
     if (enabledEvents.length > 0) {
       config.enabled_events = enabledEvents;
     }
 
-    if (signingEnabled) {
-      config.signing = { enabled: true, secret_ref: signingSecretRef };
-    }
-
-    onSubmit({ name, type: 'webhook', config_json: config });
+    onSubmit({ name, type, config_json: config });
   };
 
   const toggleEnabledEvent = (ev: NotificationEventType) => {
@@ -221,75 +295,230 @@ export function NotificationChannelForm({
       </div>
 
       <div>
-        <label className={labelClass}>{t('notification_form.webhook_url')}</label>
-        <input
-          type="url"
-          value={url}
-          onChange={(e) => setUrl(e.target.value)}
-          placeholder={t('notification_form.webhook_url_placeholder')}
-          className={inputClass}
-          required
-        />
-      </div>
-
-      <div>
-        <label className={labelClass}>{t('notification_form.method')}</label>
+        <label className={labelClass}>{t('notification_form.type')}</label>
         <select
-          value={method}
-          onChange={(e) => setMethod(toMethod(e.target.value))}
+          value={type}
+          onChange={(e) => setType(e.target.value as 'webhook' | 'telegram' | 'email')}
           className={selectClass}
+          disabled={!!channel}
         >
-          <option value="POST">POST</option>
-          <option value="PUT">PUT</option>
-          <option value="PATCH">PATCH</option>
-          <option value="DELETE">DELETE</option>
-          <option value="GET">GET</option>
-          <option value="HEAD">HEAD</option>
+          <option value="webhook">{t('notification_form.type_webhook')}</option>
+          <option value="telegram">{t('notification_form.type_telegram')}</option>
+          <option value="email">{t('notification_form.type_email')}</option>
         </select>
       </div>
 
-      <div>
-        <label className={labelClass}>{t('notification_form.payload_type')}</label>
-        <select
-          value={payloadType}
-          onChange={(e) => setPayloadType(toPayloadType(e.target.value))}
-          className={selectClass}
-        >
-          <option value="json">{t('notification_form.payload_type_json')}</option>
-          <option value="param">{t('notification_form.payload_type_query')}</option>
-          <option value="x-www-form-urlencoded">
-            {t('notification_form.payload_type_urlencoded')}
-          </option>
-        </select>
-        <div className={FIELD_HELP_CLASS}>{t('notification_form.payload_type_help')}</div>
-      </div>
+      {type === 'webhook' && (
+        <>
+          <div>
+            <label className={labelClass}>{t('notification_form.webhook_url')}</label>
+            <input
+              type="url"
+              value={url}
+              onChange={(e) => setUrl(e.target.value)}
+              placeholder={t('notification_form.webhook_url_placeholder')}
+              className={inputClass}
+              required
+            />
+          </div>
 
-      <div>
-        <label className={labelClass}>{t('notification_form.timeout_ms')}</label>
-        <input
-          type="number"
-          min={1}
-          max={60000}
-          value={timeoutMs}
-          onChange={(e) => setTimeoutMs(Number(e.target.value))}
-          className={inputClass}
-        />
-      </div>
+          <div>
+            <label className={labelClass}>{t('notification_form.method')}</label>
+            <select
+              value={method}
+              onChange={(e) => setMethod(toMethod(e.target.value))}
+              className={selectClass}
+            >
+              <option value="POST">POST</option>
+              <option value="PUT">PUT</option>
+              <option value="PATCH">PATCH</option>
+              <option value="DELETE">DELETE</option>
+              <option value="GET">GET</option>
+              <option value="HEAD">HEAD</option>
+            </select>
+          </div>
 
-      <div>
-        <label className={labelClass}>{t('notification_form.headers_json')}</label>
-        <textarea
-          value={headersJson}
-          onChange={(e) => setHeadersJson(e.target.value)}
-          className={textareaClass}
-          rows={4}
-          placeholder={t('notification_form.headers_placeholder')}
-        />
-        {!headersParse.ok && (
-          <div className="mt-1 text-xs text-red-600 dark:text-red-400">{headersParse.error}</div>
-        )}
-        <div className={FIELD_HELP_CLASS}>{t('notification_form.headers_help')}</div>
-      </div>
+          <div>
+            <label className={labelClass}>{t('notification_form.payload_type')}</label>
+            <select
+              value={payloadType}
+              onChange={(e) => setPayloadType(toPayloadType(e.target.value))}
+              className={selectClass}
+            >
+              <option value="json">{t('notification_form.payload_type_json')}</option>
+              <option value="param">{t('notification_form.payload_type_query')}</option>
+              <option value="x-www-form-urlencoded">
+                {t('notification_form.payload_type_urlencoded')}
+              </option>
+            </select>
+            <div className={FIELD_HELP_CLASS}>{t('notification_form.payload_type_help')}</div>
+          </div>
+
+          <div>
+            <label className={labelClass}>{t('notification_form.timeout_ms')}</label>
+            <input
+              type="number"
+              min={1}
+              max={60000}
+              value={timeoutMs}
+              onChange={(e) => setTimeoutMs(Number(e.target.value))}
+              className={inputClass}
+            />
+          </div>
+
+          <div>
+            <label className={labelClass}>{t('notification_form.headers_json')}</label>
+            <textarea
+              value={headersJson}
+              onChange={(e) => setHeadersJson(e.target.value)}
+              className={textareaClass}
+              rows={4}
+              placeholder={t('notification_form.headers_placeholder')}
+            />
+            {!headersParse.ok && (
+              <div className="mt-1 text-xs text-red-600 dark:text-red-400">{headersParse.error}</div>
+            )}
+            <div className={FIELD_HELP_CLASS}>{t('notification_form.headers_help')}</div>
+          </div>
+
+          <div>
+            <label className={labelClass}>{t('notification_form.payload_template_optional')}</label>
+            <textarea
+              value={payloadTemplateJson}
+              onChange={(e) => setPayloadTemplateJson(e.target.value)}
+              className={textareaClass}
+              rows={8}
+              placeholder={
+                payloadType === 'json'
+                  ? t('notification_form.payload_template_placeholder_json')
+                  : t('notification_form.payload_template_placeholder_flat')
+              }
+            />
+            {!payloadTemplateParse.ok && (
+              <div className="mt-1 text-xs text-red-600 dark:text-red-400">
+                {payloadTemplateParse.error}
+              </div>
+            )}
+            <div className={FIELD_HELP_CLASS}>{t('notification_form.payload_template_help')}</div>
+          </div>
+
+          <div className="border-t border-slate-200 dark:border-slate-700 pt-4">
+            <label className="flex items-center gap-2 text-sm text-slate-700 dark:text-slate-300">
+              <input
+                type="checkbox"
+                checked={signingEnabled}
+                onChange={(e) => setSigningEnabled(e.target.checked)}
+              />
+              <span>{t('notification_form.signing_enable')}</span>
+            </label>
+            {signingEnabled && (
+              <div className="mt-3">
+                <label className={labelClass}>{t('notification_form.signing_secret_ref')}</label>
+                <input
+                  type="text"
+                  value={signingSecretRef}
+                  onChange={(e) => setSigningSecretRef(e.target.value)}
+                  className={inputClass}
+                  placeholder={t('notification_form.signing_secret_ref_placeholder')}
+                  required
+                />
+              </div>
+            )}
+          </div>
+        </>
+      )}
+
+      {type === 'telegram' && (
+        <>
+          <div>
+            <label className={labelClass}>{t('notification_form.telegram_bot_token')}</label>
+            <input
+              type="password"
+              value={botToken}
+              onChange={(e) => setBotToken(e.target.value)}
+              placeholder={t('notification_form.telegram_bot_token_placeholder')}
+              className={inputClass}
+              required
+            />
+          </div>
+
+          <div>
+            <label className={labelClass}>{t('notification_form.telegram_chat_id')}</label>
+            <input
+              type="text"
+              value={chatId}
+              onChange={(e) => setChatId(e.target.value)}
+              placeholder={t('notification_form.telegram_chat_id_placeholder')}
+              className={inputClass}
+              required
+            />
+          </div>
+        </>
+      )}
+
+      {type === 'email' && (
+        <>
+          <div>
+            <label className={labelClass}>{t('notification_form.email_provider')}</label>
+            <select
+              value={emailProvider}
+              onChange={(e) => setEmailProvider(e.target.value as 'resend' | 'sendgrid')}
+              className={selectClass}
+            >
+              <option value="resend">{t('notification_form.email_provider_resend')}</option>
+              <option value="sendgrid">{t('notification_form.email_provider_sendgrid')}</option>
+            </select>
+          </div>
+
+          <div>
+            <label className={labelClass}>{t('notification_form.email_api_key')}</label>
+            <input
+              type="password"
+              value={emailApiKey}
+              onChange={(e) => setEmailApiKey(e.target.value)}
+              placeholder={t('notification_form.email_api_key_placeholder')}
+              className={inputClass}
+              required
+            />
+          </div>
+
+          <div>
+            <label className={labelClass}>{t('notification_form.email_from')}</label>
+            <input
+              type="email"
+              value={emailFrom}
+              onChange={(e) => setEmailFrom(e.target.value)}
+              placeholder={t('notification_form.email_from_placeholder')}
+              className={inputClass}
+              required
+            />
+          </div>
+
+          <div>
+            <label className={labelClass}>{t('notification_form.email_to')}</label>
+            <input
+              type="text"
+              value={emailTo}
+              onChange={(e) => setEmailTo(e.target.value)}
+              placeholder={t('notification_form.email_to_placeholder')}
+              className={inputClass}
+              required
+            />
+          </div>
+
+          <div>
+            <label className={labelClass}>{t('notification_form.email_subject_template')}</label>
+            <input
+              type="text"
+              value={emailSubjectTemplate}
+              onChange={(e) => setEmailSubjectTemplate(e.target.value)}
+              placeholder={t('notification_form.email_subject_template_placeholder')}
+              className={inputClass}
+            />
+            <div className={FIELD_HELP_CLASS}>{t('notification_form.email_subject_template_help')}</div>
+          </div>
+        </>
+      )}
 
       <div>
         <label className={labelClass}>{t('notification_form.message_template_optional')}</label>
@@ -301,27 +530,6 @@ export function NotificationChannelForm({
           placeholder={t('notification_form.message_template_placeholder')}
         />
         <div className={FIELD_HELP_CLASS}>{t('notification_form.message_template_help')}</div>
-      </div>
-
-      <div>
-        <label className={labelClass}>{t('notification_form.payload_template_optional')}</label>
-        <textarea
-          value={payloadTemplateJson}
-          onChange={(e) => setPayloadTemplateJson(e.target.value)}
-          className={textareaClass}
-          rows={8}
-          placeholder={
-            payloadType === 'json'
-              ? t('notification_form.payload_template_placeholder_json')
-              : t('notification_form.payload_template_placeholder_flat')
-          }
-        />
-        {!payloadTemplateParse.ok && (
-          <div className="mt-1 text-xs text-red-600 dark:text-red-400">
-            {payloadTemplateParse.error}
-          </div>
-        )}
-        <div className={FIELD_HELP_CLASS}>{t('notification_form.payload_template_help')}</div>
       </div>
 
       <div>
@@ -342,30 +550,6 @@ export function NotificationChannelForm({
           ))}
         </div>
         <div className={FIELD_HELP_CLASS}>{t('notification_form.enabled_events_help')}</div>
-      </div>
-
-      <div className="border-t border-slate-200 dark:border-slate-700 pt-4">
-        <label className="flex items-center gap-2 text-sm text-slate-700 dark:text-slate-300">
-          <input
-            type="checkbox"
-            checked={signingEnabled}
-            onChange={(e) => setSigningEnabled(e.target.checked)}
-          />
-          <span>{t('notification_form.signing_enable')}</span>
-        </label>
-        {signingEnabled && (
-          <div className="mt-3">
-            <label className={labelClass}>{t('notification_form.signing_secret_ref')}</label>
-            <input
-              type="text"
-              value={signingSecretRef}
-              onChange={(e) => setSigningSecretRef(e.target.value)}
-              className={inputClass}
-              placeholder={t('notification_form.signing_secret_ref_placeholder')}
-              required
-            />
-          </div>
-        )}
       </div>
 
       <div className="flex gap-3 pt-2">

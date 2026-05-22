@@ -14,6 +14,8 @@ import {
   serializeDbJson,
   serializeDbJsonNullable,
   webhookChannelConfigSchema,
+  telegramChannelConfigSchema,
+  emailChannelConfigSchema,
 } from '@uptimer/db';
 
 import type { Env } from '../env';
@@ -35,11 +37,7 @@ import {
 } from '../monitor/http-assertions';
 import { validateHttpTarget, validateTcpTarget } from '../monitor/targets';
 import { runTcpCheck } from '../monitor/tcp';
-import {
-  dispatchWebhookToChannelLegacy,
-  dispatchWebhookToChannels,
-  type WebhookChannel,
-} from '../notify/webhook';
+import type { AnyNotificationChannel } from '../notify/dispatcher';
 import { adminAnalyticsRoutes } from './admin-analytics';
 import { adminExportsRoutes } from './admin-exports';
 import { adminSettingsRoutes } from './admin-settings';
@@ -796,12 +794,38 @@ type NotificationChannelRow = {
   created_at: number;
 };
 
+function parseChannelConfig(type: string, configJson: string): AnyNotificationChannel['config'] {
+  switch (type) {
+    case 'webhook':
+      return parseDbJson(webhookChannelConfigSchema, configJson, { field: 'config_json' });
+    case 'telegram':
+      return parseDbJson(telegramChannelConfigSchema, configJson, { field: 'config_json' });
+    case 'email':
+      return parseDbJson(emailChannelConfigSchema, configJson, { field: 'config_json' });
+    default:
+      throw new Error(`Unsupported channel type: ${type}`);
+  }
+}
+
+function serializeChannelConfig(type: string, config: AnyNotificationChannel['config']): string {
+  switch (type) {
+    case 'webhook':
+      return serializeDbJson(webhookChannelConfigSchema, config, { field: 'config_json' });
+    case 'telegram':
+      return serializeDbJson(telegramChannelConfigSchema, config, { field: 'config_json' });
+    case 'email':
+      return serializeDbJson(emailChannelConfigSchema, config, { field: 'config_json' });
+    default:
+      throw new Error(`Unsupported channel type: ${type}`);
+  }
+}
+
 function notificationChannelRowToApi(row: NotificationChannelRow) {
   return {
     id: row.id,
     name: row.name,
     type: row.type,
-    config_json: parseDbJson(webhookChannelConfigSchema, row.config_json, { field: 'config_json' }),
+    config_json: parseChannelConfig(row.type, row.config_json),
     is_active: row.is_active === 1,
     created_at: row.created_at,
   };
@@ -839,9 +863,7 @@ adminRoutes.post('/notification-channels', async (c) => {
 
   const now = Math.floor(Date.now() / 1000);
   const isActive = input.is_active ?? true;
-  const configJson = serializeDbJson(webhookChannelConfigSchema, input.config_json, {
-    field: 'config_json',
-  });
+  const configJson = serializeChannelConfig(input.type, input.config_json);
 
   const row = await c.env.DB.prepare(
     `
@@ -887,7 +909,7 @@ adminRoutes.patch('/notification-channels/:id', async (c) => {
     input.is_active !== undefined ? (input.is_active ? 1 : 0) : existing.is_active;
   const nextConfigJson =
     input.config_json !== undefined
-      ? serializeDbJson(webhookChannelConfigSchema, input.config_json, { field: 'config_json' })
+      ? serializeChannelConfig(existing.type, input.config_json)
       : existing.config_json;
 
   const updated = await c.env.DB.prepare(
@@ -951,30 +973,26 @@ type NotificationDeliveryRow = {
   created_at: number;
 };
 
-type ActiveWebhookChannelRow = {
-  id: number;
-  name: string;
-  config_json: string;
-};
-
-async function listActiveWebhookChannels(db: D1Database): Promise<WebhookChannel[]> {
+async function listActiveChannels(db: D1Database): Promise<AnyNotificationChannel[]> {
   const { results } = await db
     .prepare(
       `
-      SELECT id, name, config_json
+      SELECT id, name, type, config_json
       FROM notification_channels
-      WHERE is_active = 1 AND type = 'webhook'
+      WHERE is_active = 1
       ORDER BY id
     `,
     )
-    .all<ActiveWebhookChannelRow>();
+    .all<{ id: number; name: string; type: string; config_json: string }>();
 
   return (results ?? []).map((r) => ({
     id: r.id,
     name: r.name,
-    config: parseDbJson(webhookChannelConfigSchema, r.config_json, { field: 'config_json' }),
-  }));
+    type: r.type as AnyNotificationChannel['type'],
+    config: parseChannelConfig(r.type, r.config_json),
+  } as unknown as AnyNotificationChannel));
 }
+
 
 function normalizeIdList(ids: number[]): number[] {
   const out: number[] = [];
@@ -1220,13 +1238,16 @@ adminRoutes.post('/notification-channels/:id/test', async (c) => {
     throw new AppError(404, 'NOT_FOUND', 'Notification channel not found');
   }
 
-  const config = parseDbJson(webhookChannelConfigSchema, channelRow.config_json, {
-    field: 'config_json',
-  });
-  const channel = { id: channelRow.id, name: channelRow.name, config };
+  const config = parseChannelConfig(channelRow.type, channelRow.config_json);
+  const channel = {
+    id: channelRow.id,
+    name: channelRow.name,
+    type: channelRow.type as AnyNotificationChannel['type'],
+    config,
+  } as unknown as AnyNotificationChannel;
 
   const now = Math.floor(Date.now() / 1000);
-  const eventKey = `test:webhook:${id}:${now}`;
+  const eventKey = `test:${channelRow.type}:${id}:${now}`;
   const payload = {
     event: 'test.ping',
     event_id: eventKey,
@@ -1236,10 +1257,12 @@ adminRoutes.post('/notification-channels/:id/test', async (c) => {
     state: { status: 'up', latency_ms: 123, http_status: 200, error: null, location: null },
   };
 
-  await dispatchWebhookToChannelLegacy({
+  const { dispatchNotificationToChannel } = await import('../notify/dispatcher');
+  await dispatchNotificationToChannel({
     db: c.env.DB,
     env: c.env as unknown as Record<string, unknown>,
     channel,
+    eventType: 'test.ping',
     eventKey,
     payload,
   });
@@ -1266,6 +1289,7 @@ adminRoutes.post('/notification-channels/:id/test', async (c) => {
       : null,
   });
 });
+
 
 adminRoutes.get('/incidents', async (c) => {
   const limit = z.coerce
@@ -1355,7 +1379,7 @@ adminRoutes.post('/incidents', async (c) => {
 
   c.executionCtx.waitUntil(
     (async () => {
-      const channels = await listActiveWebhookChannels(c.env.DB);
+      const channels = await listActiveChannels(c.env.DB);
       if (channels.length === 0) return;
 
       const eventKey = `incident:${row.id}:created:${startedAt}`;
@@ -1366,7 +1390,8 @@ adminRoutes.post('/incidents', async (c) => {
         incident: incidentRowToApi(row, [], monitorIds),
       };
 
-      await dispatchWebhookToChannels({
+      const { dispatchNotificationsToChannels } = await import('../notify/dispatcher');
+      await dispatchNotificationsToChannels({
         db: c.env.DB,
         env: c.env as unknown as Record<string, unknown>,
         channels,
@@ -1456,7 +1481,7 @@ adminRoutes.post('/incidents/:id/updates', async (c) => {
 
   c.executionCtx.waitUntil(
     (async () => {
-      const channels = await listActiveWebhookChannels(c.env.DB);
+      const channels = await listActiveChannels(c.env.DB);
       if (channels.length === 0) return;
 
       const eventKey = `incident:${id}:update:${updateRow.id}`;
@@ -1468,7 +1493,8 @@ adminRoutes.post('/incidents/:id/updates', async (c) => {
         update: incidentUpdateRowToApi(updateRow),
       };
 
-      await dispatchWebhookToChannels({
+      const { dispatchNotificationsToChannels } = await import('../notify/dispatcher');
+      await dispatchNotificationsToChannels({
         db: c.env.DB,
         env: c.env as unknown as Record<string, unknown>,
         channels,
@@ -1563,7 +1589,7 @@ adminRoutes.patch('/incidents/:id/resolve', async (c) => {
 
   c.executionCtx.waitUntil(
     (async () => {
-      const channels = await listActiveWebhookChannels(c.env.DB);
+      const channels = await listActiveChannels(c.env.DB);
       if (channels.length === 0) return;
 
       const eventKey = `incident:${id}:resolved:${updateRow.id}`;
@@ -1575,7 +1601,8 @@ adminRoutes.patch('/incidents/:id/resolve', async (c) => {
         update: incidentUpdateRowToApi(updateRow),
       };
 
-      await dispatchWebhookToChannels({
+      const { dispatchNotificationsToChannels } = await import('../notify/dispatcher');
+      await dispatchNotificationsToChannels({
         db: c.env.DB,
         env: c.env as unknown as Record<string, unknown>,
         channels,

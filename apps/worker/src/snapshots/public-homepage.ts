@@ -610,10 +610,14 @@ function normalizeDirectHomepagePayload(value: unknown): PublicHomepageResponse 
 function readStoredHomepageSnapshotData(value: unknown): PublicHomepageResponse | null {
   const artifact = publicHomepageStoredRenderArtifactSchema.safeParse(value);
   if (artifact.success) {
-    if ('snapshot' in artifact.data) {
-      return artifact.data.snapshot;
+    const data = artifact.data;
+    if ('snapshot' in data) {
+      return data.snapshot;
     }
-    return readStoredHomepageSnapshotData(safeJsonParse(artifact.data.snapshot_json));
+    if ('snapshot_json' in data) {
+      return readStoredHomepageSnapshotData(safeJsonParse(data.snapshot_json));
+    }
+    return null;
   }
 
   if (!isRecord(value)) return null;
@@ -629,20 +633,24 @@ function readStoredHomepageSnapshotData(value: unknown): PublicHomepageResponse 
 function readStoredHomepageSnapshotRender(value: unknown): PublicHomepageRenderArtifact | null {
   const artifact = publicHomepageStoredRenderArtifactSchema.safeParse(value);
   if (artifact.success) {
-    if ('snapshot' in artifact.data) {
-      return artifact.data;
+    const data = artifact.data;
+    if ('snapshot' in data) {
+      return data;
     }
-    const snapshot = readStoredHomepageSnapshotData(safeJsonParse(artifact.data.snapshot_json));
-    if (!snapshot) {
-      return null;
+    if ('snapshot_json' in data) {
+      const snapshot = readStoredHomepageSnapshotData(safeJsonParse(data.snapshot_json));
+      if (!snapshot) {
+        return null;
+      }
+      return {
+        generated_at: data.generated_at,
+        preload_html: data.preload_html,
+        snapshot,
+        meta_title: data.meta_title,
+        meta_description: data.meta_description,
+      };
     }
-    return {
-      generated_at: artifact.data.generated_at,
-      preload_html: artifact.data.preload_html,
-      snapshot,
-      meta_title: artifact.data.meta_title,
-      meta_description: artifact.data.meta_description,
-    };
+    return null;
   }
 
   if (!isRecord(value)) return null;
@@ -725,10 +733,17 @@ function normalizeHomepageArtifactBodyJson(bodyJson: string): string | null {
 
   const directArtifact = publicHomepageStoredRenderArtifactSchema.safeParse(parsed);
   if (directArtifact.success) {
-    if (!('snapshot' in directArtifact.data) && !readStoredHomepageSnapshotData(safeJsonParse(directArtifact.data.snapshot_json))) {
-      return null;
+    const data = directArtifact.data;
+    if ('snapshot' in data) {
+      return JSON.stringify(data);
     }
-    return JSON.stringify(directArtifact.data);
+    if ('snapshot_json' in data) {
+      if (!readStoredHomepageSnapshotData(safeJsonParse(data.snapshot_json))) {
+        return null;
+      }
+      return JSON.stringify(data);
+    }
+    return null;
   }
 
   if (!isRecord(parsed)) {
@@ -744,13 +759,17 @@ function normalizeHomepageArtifactBodyJson(bodyJson: string): string | null {
   if (!legacyArtifact.success) {
     return null;
   }
-  if (
-    !('snapshot' in legacyArtifact.data) &&
-    !readStoredHomepageSnapshotData(safeJsonParse(legacyArtifact.data.snapshot_json))
-  ) {
-    return null;
+  const data = legacyArtifact.data;
+  if ('snapshot' in data) {
+    return JSON.stringify(data);
   }
-  return JSON.stringify(legacyArtifact.data);
+  if ('snapshot_json' in data) {
+    if (!readStoredHomepageSnapshotData(safeJsonParse(data.snapshot_json))) {
+      return null;
+    }
+    return JSON.stringify(data);
+  }
+  return null;
 }
 
 function readSnapshotValueFromRows<T>(opts: {

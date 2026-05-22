@@ -378,12 +378,12 @@ CREATE TABLE IF NOT EXISTS maintenance_window_monitors (
 CREATE INDEX IF NOT EXISTS idx_maintenance_window_monitors_monitor
   ON maintenance_window_monitors(monitor_id);
 
--- Kênh thông báo (Bắt đầu với Webhook; có thể thêm `provider` sau)
+-- Kênh thông báo (Hỗ trợ Webhook, Email, Telegram)
 CREATE TABLE IF NOT EXISTS notification_channels (
   id INTEGER PRIMARY KEY AUTOINCREMENT,
   name TEXT NOT NULL,
-  type TEXT NOT NULL CHECK (type IN ('webhook')),
-  config_json TEXT NOT NULL, -- { url, method, headers, payloadTemplate, timeoutMs, ... }
+  type TEXT NOT NULL CHECK (type IN ('webhook', 'email', 'telegram')),
+  config_json TEXT NOT NULL, -- Cấu trúc cấu hình JSON cụ thể cho Webhook/Email/Telegram
   is_active INTEGER NOT NULL DEFAULT 1 CHECK (is_active IN (0,1)),
   created_at INTEGER NOT NULL DEFAULT (CAST(strftime('%s','now') AS INTEGER))
 );
@@ -591,6 +591,31 @@ Mẫu `config_json` của Webhook Channel (Gợi ý):
     "enabled": false,
     "secret_ref": "UPTIMER_WEBHOOK_SIGNING_SECRET"
   }
+}
+```
+
+Các thuộc tính `config_json` của Telegram Channel:
+
+```json
+{
+  "bot_token": "123456:ABC-DEF1234ghIkl-zyx57W2v1u123ew11",
+  "chat_id": "-100123456789",
+  "message_template": "Mẫu tin nhắn tùy chọn",
+  "enabled_events": ["monitor.down", "monitor.up"]
+}
+```
+
+Các thuộc tính `config_json` của Email Channel:
+
+```json
+{
+  "provider": "resend", // hoặc "sendgrid"
+  "api_key": "re_xxxxxx", // Resend hoặc SendGrid API key
+  "from": "alerts@yourdomain.com",
+  "to": "admin@yourdomain.com",
+  "subject_template": "Tiêu đề thư tùy chọn",
+  "message_template": "Mẫu nội dung thư tùy chọn",
+  "enabled_events": ["monitor.down", "monitor.up"]
 }
 ```
 

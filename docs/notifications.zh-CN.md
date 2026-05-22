@@ -1,27 +1,27 @@
 # 通知系统
 
-[English](notifications.md) | 中文
+[English](notifications.md) | 中文 | [Tiếng Việt](notifications.vi-VN.md)
 
-Uptimer 的通知系统在监控状态变化或事件创建/更新时发送 Webhook 通知。本文档涵盖事件类型、渠道配置、Payload 构建、模板变量、Webhook 签名与故障排除。
+Uptimer 的通知系统在监控状态变化或事件创建/更新时发送通知。本文档涵盖事件类型、渠道类型、渠道配置、Payload 构建、模板变量、Webhook 签名与故障排除。
 
 ## 概览
 
 通知系统的核心能力：
 
-- 在关键状态变化（UP->DOWN、DOWN->UP）和事件生命周期事件时发送通知
-- 每个渠道独立配置：HTTP 方法、超时、Headers、Payload 格式、模板、事件过滤、可选签名
+- 在关键状态变化（UP→DOWN、DOWN→UP）和事件生命周期事件时发送通知
+- 支持三种渠道类型：**Webhook、Email 和 Telegram**
+- 每个渠道独立配置：事件过滤、模板、类型专属设置
 - 幂等投递保证：每个事件对每个渠道最多发送一次（通过 `notification_deliveries` 唯一约束实现）
 
 ### 核心流程
 
 1. 系统产生事件（eventType + eventKey + payload）
-2. 查找所有活跃的 Webhook 渠道
+2. 查找所有活跃的渠道（webhook + email + telegram）
 3. 对每个渠道：
    - 按 `enabled_events` 过滤
    - 在 `notification_deliveries` 中占位（幂等 claim）
-   - 渲染模板（message、payload、headers）
-   - 根据 `payload_type` 构建 URL/body
-   - 通过 `fetch` 发送（no-store + timeout）
+   - 渲染模板（message、payload/body、headers）
+   - 通过对应发送器发送（fetch / Resend API / Telegram Bot API）
    - 记录投递结果（success/failed）
 
 ## 事件类型
@@ -61,7 +61,17 @@ Uptimer 的通知系统在监控状态变化或事件创建/更新时发送 Webh
 
 ## 渠道配置
 
-Webhook 渠道的 `config_json` 字段（由 Zod 校验）：
+所有渠道共享以下字段：
+
+| 字段             | 必填 | 默认值 | 说明                                                       |
+| ---------------- | ---- | ------ | ---------------------------------------------------------------- |
+| `name`           | 是   | —      | 显示名称                                                         |
+| `type`           | 是   | —      | `webhook`、`email` 或 `telegram`                                |
+| `is_active`      | 否   | `true` | 是否接收投递                                                     |
+| `config_json`    | 是   | —      | 类型専属的 JSON 对象（详见下方各节）                         |
+| `enabled_events` | 否   | —      | 事件白名单数组，存储在 `config_json` 中。空 = 全部事件。        |
+
+### Webhook `config_json` 字段
 
 | 字段               | 必填 | 默认值 | 说明                                                                   |
 | ------------------ | ---- | ------ | ---------------------------------------------------------------------- |
@@ -74,6 +84,61 @@ Webhook 渠道的 `config_json` 字段（由 Zod 校验）：
 | `payload_template` | 否   | —      | 自定义 Payload 模板（详见下文）                                        |
 | `enabled_events`   | 否   | —      | 事件白名单数组。空 = 全部事件。`test.ping` 始终通过。                  |
 | `signing`          | 否   | —      | `{ enabled: boolean, secret_ref: string }` — HMAC-SHA256 签名          |
+
+### Email `config_json` 字段
+
+Email 通过 [Resend](https://resend.com) 或 [SendGrid](https://sendgrid.com) 发送。两者选配其一。
+
+| 字段               | 必填 | 默认值 | 说明                                                     |
+| ------------------ | ---- | ------ | ------------------------------------------------------------ |
+| `provider`         | 是   | —      | `resend` 或 `sendgrid`                                       |
+| `api_key_ref`      | 是   | —      | 存儲 Resend/SendGrid API Key 的 Worker Secret 名称          |
+| `from`             | 是   | —      | 发件人地址，如 `Uptimer <alerts@example.com>`              |
+| `to`               | 是   | —      | 收件人邮筱地址数组（1–10 个）                              |
+| `subject_template` | 否   | —      | 邮件主题模板，支持 `{{variable}}`                    |
+| `message_template` | 否   | —      | `message` 变量的模板，用于邮件正文                       |
+| `enabled_events`   | 否   | —      | 事件白名单数组。空 = 全部事件。`test.ping` 始终通过。  |
+
+**示例：**
+
+```json
+{
+  "provider": "resend",
+  "api_key_ref": "RESEND_API_KEY",
+  "from": "Uptimer <alerts@example.com>",
+  "to": ["ops@example.com"],
+  "subject_template": "[{{event}}] {{monitor.name}} 当前状态 {{state.status}}",
+  "message_template": "监控项 **{{monitor.name}}** 现在是 {{state.status}}。"
+}
+```
+
+> Worker Secret 名称（如 `RESEND_API_KEY`）必须在 Cloudflare Worker Secrets 中配置，或在本地开发时存入 `.dev.vars`。永远不要硬编码 API Key。
+
+### Telegram `config_json` 字段
+
+Telegram 消息通过 [Bot API](https://core.telegram.org/bots/api) 的 `sendMessage` 发送。
+
+| 字段               | 必填 | 默认值       | 说明                                                                     |
+| ------------------ | ---- | ---------- | -------------------------------------------------------------------------- |
+| `bot_token_ref`    | 是   | —          | 存储 Bot Token（`123456:ABC-def...`）的 Worker Secret 名称             |
+| `chat_id`          | 是   | —          | Telegram Chat ID（用户、群组或频道）。超级群组为负数。                    |
+| `parse_mode`       | 否   | `Markdown` | `Markdown`、`MarkdownV2` 或 `HTML`                                        |
+| `message_template` | 否   | —          | 消息模板，支持 `{{variable}}`                                           |
+| `enabled_events`   | 否   | —          | 事件白名单数组。空 = 全部事件。`test.ping` 始终通过。              |
+
+**示例：**
+
+```json
+{
+  "bot_token_ref": "TELEGRAM_BOT_TOKEN",
+  "chat_id": "-1001234567890",
+  "parse_mode": "Markdown",
+  "message_template": "*[{{event}}]* `{{monitor.name}}` 状态：*{{state.status}}*"
+}
+```
+
+> 获取 `chat_id`：将 Bot 添加到群组/频道后发送任意消息，然后访问 `https://api.telegram.org/bot<TOKEN>/getUpdates`，读取 `chat.id` 字段。
+
 
 ## Payload 模式
 
@@ -289,16 +354,20 @@ wrangler d1 execute uptimer --local \
 
 ## 已知限制
 
-- 目前仅支持 Webhook 渠道（无内置 Email、Telegram 等）
-- 模板替换始终产生字符串（详见上方「类型说明」）
+- 模板替换本质是字符串替换（详见上方「类型说明」）
 - `payload_template` 的 JSON 深度上限为 32 层
+- Email 仅通过 HTTPS API（Resend 或 SendGrid）发送，不支持普通 SMTP
+- Telegram Bot 必须有权限向目标 Chat/Channel 发送消息
 
 ## 源码参考
 
-| 组件         | 文件                                 |
-| ------------ | ------------------------------------ |
-| Webhook 派发 | `apps/worker/src/notify/webhook.ts`  |
-| 幂等去重     | `apps/worker/src/notify/dedupe.ts`   |
-| 模板引擎     | `apps/worker/src/notify/template.ts` |
-| 配置 Schema  | `packages/db/src/json.ts`            |
-| 测试端点     | `apps/worker/src/routes/admin.ts`    |
+| 组件         | 文件                                   |
+| ------------ | ---------------------------------------- |
+| 通知调度器   | `apps/worker/src/notify/dispatch.ts`     |
+| Webhook 发送器 | `apps/worker/src/notify/webhook.ts`      |
+| Email 发送器   | `apps/worker/src/notify/email.ts`        |
+| Telegram 发送器 | `apps/worker/src/notify/telegram.ts`     |
+| 幂等去重     | `apps/worker/src/notify/dedupe.ts`       |
+| 模板引擎     | `apps/worker/src/notify/template.ts`     |
+| 配置 Schema  | `packages/db/src/json.ts`                |
+| 测试端点     | `apps/worker/src/routes/admin.ts`        |

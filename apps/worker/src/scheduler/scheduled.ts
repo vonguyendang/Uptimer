@@ -839,42 +839,43 @@ async function getTcpCheckModule() {
   return await tcpCheckModulePromise;
 }
 
-async function hasActiveWebhookChannels(db: D1Database): Promise<boolean> {
-  const cachedResult = activeWebhookPresenceCacheByDb.get(db);
+async function hasActiveNotificationChannels(db: D1Database): Promise<boolean> {
+  const cachedResult = activeNotificationPresenceCacheByDb.get(db);
   if (
     cachedResult &&
-    Date.now() - cachedResult.fetchedAtMs < ACTIVE_WEBHOOK_PRESENCE_CACHE_TTL_MS
+    Date.now() - cachedResult.fetchedAtMs < ACTIVE_NOTIFICATION_PRESENCE_CACHE_TTL_MS
   ) {
     return cachedResult.hasActive;
   }
 
-  const cached = hasActiveWebhookChannelsStatementByDb.get(db);
-  const statement = cached ?? db.prepare(HAS_ACTIVE_WEBHOOK_CHANNELS_SQL);
+  const cached = hasActiveNotificationChannelsStatementByDb.get(db);
+  const statement = cached ?? db.prepare(HAS_ACTIVE_NOTIFICATION_CHANNELS_SQL);
   if (!cached) {
-    hasActiveWebhookChannelsStatementByDb.set(db, statement);
+    hasActiveNotificationChannelsStatementByDb.set(db, statement);
   }
 
   const { results } = await statement.all<unknown>();
   const hasActive = (results?.length ?? 0) > 0;
-  activeWebhookPresenceCacheByDb.set(db, { fetchedAtMs: Date.now(), hasActive });
+  activeNotificationPresenceCacheByDb.set(db, { fetchedAtMs: Date.now(), hasActive });
   return hasActive;
 }
 
 const listDueMonitorsStatementByDb = new WeakMap<D1Database, D1PreparedStatement>();
 const persistStatementTemplatesByDb = new WeakMap<D1Database, PersistStatementTemplates>();
-const hasActiveWebhookChannelsStatementByDb = new WeakMap<D1Database, D1PreparedStatement>();
-const activeWebhookPresenceCacheByDb = new WeakMap<
+const hasActiveNotificationChannelsStatementByDb = new WeakMap<D1Database, D1PreparedStatement>();
+const activeNotificationPresenceCacheByDb = new WeakMap<
   D1Database,
   { fetchedAtMs: number; hasActive: boolean }
 >();
 
-const HAS_ACTIVE_WEBHOOK_CHANNELS_SQL = `
+const HAS_ACTIVE_NOTIFICATION_CHANNELS_SQL = `
   SELECT 1 AS present
   FROM notification_channels
-  WHERE is_active = 1 AND type = 'webhook'
+  WHERE is_active = 1
   LIMIT 1
 `;
-const ACTIVE_WEBHOOK_PRESENCE_CACHE_TTL_MS = 60_000;
+const ACTIVE_NOTIFICATION_PRESENCE_CACHE_TTL_MS = 60_000;
+
 
 const LIST_DUE_MONITORS_SQL = `
   SELECT
@@ -1846,22 +1847,23 @@ export async function runScheduledTick(env: Env, ctx: ExecutionContext): Promise
   try {
     const useRuntimeFragmentPipeline = shouldUseScheduledRuntimeFragmentPipeline(env);
 
-    const [settings, due, hasWebhookNotifications] = await Promise.all([
+    const [settings, due, hasNotifications] = await Promise.all([
       readSettings(env.DB),
       listDueMonitors(env.DB, checkedAt),
-      hasActiveWebhookChannels(env.DB),
+      hasActiveNotificationChannels(env.DB),
     ]);
     const setupDurMs = performance.now() - totalStart;
 
     let notificationsModule: typeof import('./notifications') | null = null;
     let notify: NotifyContext | null = null;
-    if (hasWebhookNotifications) {
+    if (hasNotifications) {
       notificationsModule = await import('./notifications');
       notify = await notificationsModule.createNotifyContext(env, ctx);
       if (notify) {
         await notificationsModule.emitMaintenanceWindowNotifications(env, notify, now);
       }
     }
+
 
     const stateMachineConfig = {
       failuresToDownFromUp: settings.state_failures_to_down_from_up,

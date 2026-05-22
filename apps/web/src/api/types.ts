@@ -468,25 +468,65 @@ export interface WebhookChannelConfig {
   };
 }
 
+export interface TelegramChannelConfig {
+  bot_token: string;
+  chat_id: string;
+  message_template?: string;
+  enabled_events?: Array<
+    | 'monitor.down'
+    | 'monitor.up'
+    | 'incident.created'
+    | 'incident.updated'
+    | 'incident.resolved'
+    | 'maintenance.started'
+    | 'maintenance.ended'
+    | 'test.ping'
+  >;
+}
+
+export interface EmailChannelConfig {
+  provider: 'resend' | 'sendgrid';
+  api_key: string;
+  from: string;
+  to: string;
+  subject_template?: string;
+  message_template?: string;
+  enabled_events?: Array<
+    | 'monitor.down'
+    | 'monitor.up'
+    | 'incident.created'
+    | 'incident.updated'
+    | 'incident.resolved'
+    | 'maintenance.started'
+    | 'maintenance.ended'
+    | 'test.ping'
+  >;
+}
+
+export type AnyNotificationChannelConfig =
+  | WebhookChannelConfig
+  | TelegramChannelConfig
+  | EmailChannelConfig;
+
 export interface NotificationChannel {
   id: number;
   name: string;
-  type: 'webhook';
-  config_json: WebhookChannelConfig;
+  type: 'webhook' | 'telegram' | 'email';
+  config_json: AnyNotificationChannelConfig;
   is_active: boolean;
   created_at: number;
 }
 
 export interface CreateNotificationChannelInput {
   name: string;
-  type?: 'webhook';
-  config_json: WebhookChannelConfig;
+  type: 'webhook' | 'telegram' | 'email';
+  config_json: AnyNotificationChannelConfig;
   is_active?: boolean;
 }
 
 export interface PatchNotificationChannelInput {
   name?: string;
-  config_json?: WebhookChannelConfig;
+  config_json?: AnyNotificationChannelConfig;
   is_active?: boolean;
 }
 

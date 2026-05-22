@@ -1,25 +1,31 @@
-import { parseDbJson, webhookChannelConfigSchema } from '@uptimer/db/json';
+import {
+  parseDbJson,
+  webhookChannelConfigSchema,
+  telegramChannelConfigSchema,
+  emailChannelConfigSchema,
+} from '@uptimer/db/json';
 import type { MonitorStatus } from '@uptimer/db/schema';
 
 import type { Env } from '../env';
 import type { NextState } from '../monitor/state-machine';
 import type { CheckOutcome } from '../monitor/types';
-import type { WebhookChannel } from '../notify/webhook';
+import type { AnyNotificationChannel } from '../notify/dispatcher';
 
 const MAINTENANCE_EVENT_LOOKBACK_SECONDS = 10 * 60;
 const D1_MAX_SQL_VARIABLES = 100;
 const MAINTENANCE_SUPPRESSED_MONITOR_IDS_BATCH_SIZE = D1_MAX_SQL_VARIABLES - 1;
-const LIST_ACTIVE_WEBHOOK_CHANNELS_SQL = `
-  SELECT id, name, config_json, created_at
+const LIST_ACTIVE_CHANNELS_SQL = `
+  SELECT id, name, type, config_json, created_at
   FROM notification_channels
-  WHERE is_active = 1 AND type = 'webhook'
+  WHERE is_active = 1
   ORDER BY id
 `;
-const ACTIVE_WEBHOOK_CHANNELS_CACHE_TTL_MS = 2 * 60_000;
+const ACTIVE_CHANNELS_CACHE_TTL_MS = 2 * 60_000;
 
-type ActiveWebhookChannelRow = {
+type ActiveChannelRow = {
   id: number;
   name: string;
+  type?: string | null;
   config_json: string;
   created_at: number;
 };
@@ -38,12 +44,12 @@ type MaintenanceWindowMonitorLinkRow = {
   monitor_id: number;
 };
 
-export type WebhookChannelWithMeta = WebhookChannel & { created_at: number };
+export type NotificationChannelWithMeta = AnyNotificationChannel & { created_at: number };
 
 export type NotifyContext = {
   ctx: ExecutionContext;
   envRecord: Record<string, unknown>;
-  channels: WebhookChannelWithMeta[];
+  channels: NotificationChannelWithMeta[];
 };
 
 export type CompletedNotificationMonitor = {
@@ -60,44 +66,62 @@ export type CompletedNotificationMonitor = {
   maintenanceSuppressed: boolean;
 };
 
-const listActiveWebhookChannelsStatementByDb = new WeakMap<D1Database, D1PreparedStatement>();
-const activeWebhookChannelsCacheByDb = new WeakMap<
+const listActiveChannelsStatementByDb = new WeakMap<D1Database, D1PreparedStatement>();
+const activeChannelsCacheByDb = new WeakMap<
   D1Database,
-  { fetchedAtMs: number; channels: WebhookChannelWithMeta[] }
+  { fetchedAtMs: number; channels: NotificationChannelWithMeta[] }
 >();
 
-let webhookModulePromise: Promise<typeof import('../notify/webhook')> | null = null;
+let dispatcherModulePromise: Promise<typeof import('../notify/dispatcher')> | null = null;
 
-async function getWebhookDispatchModule() {
-  webhookModulePromise ??= import('../notify/webhook');
-  return await webhookModulePromise;
+async function getDispatcherModule() {
+  dispatcherModulePromise ??= import('../notify/dispatcher');
+  return await dispatcherModulePromise;
 }
 
-async function listActiveWebhookChannels(db: D1Database): Promise<WebhookChannelWithMeta[]> {
-  const cachedResult = activeWebhookChannelsCacheByDb.get(db);
+function parseChannelConfig(type: string | undefined | null, configJson: string): AnyNotificationChannel['config'] {
+  const channelType = type || 'webhook';
+  switch (channelType) {
+    case 'webhook':
+      return parseDbJson(webhookChannelConfigSchema, configJson, { field: 'config_json' });
+    case 'telegram':
+      return parseDbJson(telegramChannelConfigSchema, configJson, { field: 'config_json' });
+    case 'email':
+      return parseDbJson(emailChannelConfigSchema, configJson, { field: 'config_json' });
+    default:
+      throw new Error(`Unsupported channel type: ${channelType}`);
+  }
+}
+
+async function listActiveChannels(db: D1Database): Promise<NotificationChannelWithMeta[]> {
+  const cachedResult = activeChannelsCacheByDb.get(db);
   if (
     cachedResult &&
-    Date.now() - cachedResult.fetchedAtMs < ACTIVE_WEBHOOK_CHANNELS_CACHE_TTL_MS
+    Date.now() - cachedResult.fetchedAtMs < ACTIVE_CHANNELS_CACHE_TTL_MS
   ) {
     return cachedResult.channels;
   }
 
-  const cached = listActiveWebhookChannelsStatementByDb.get(db);
-  const statement = cached ?? db.prepare(LIST_ACTIVE_WEBHOOK_CHANNELS_SQL);
+  const cached = listActiveChannelsStatementByDb.get(db);
+  const statement = cached ?? db.prepare(LIST_ACTIVE_CHANNELS_SQL);
   if (!cached) {
-    listActiveWebhookChannelsStatementByDb.set(db, statement);
+    listActiveChannelsStatementByDb.set(db, statement);
   }
 
-  const { results } = await statement.all<ActiveWebhookChannelRow>();
+  const { results } = await statement.all<ActiveChannelRow>();
 
-  const channels = (results ?? []).map((r) => ({
-    id: r.id,
-    name: r.name,
-    config: parseDbJson(webhookChannelConfigSchema, r.config_json, { field: 'config_json' }),
-    created_at: r.created_at,
-  }));
+  const channels = (results ?? []).map((r) => {
+    const config = parseChannelConfig(r.type, r.config_json);
+    return {
+      id: r.id,
+      name: r.name,
+      type: (r.type || 'webhook') as AnyNotificationChannel['type'],
+      config,
+      created_at: r.created_at,
+    } as unknown as NotificationChannelWithMeta;
+  });
 
-  activeWebhookChannelsCacheByDb.set(db, { fetchedAtMs: Date.now(), channels });
+  activeChannelsCacheByDb.set(db, { fetchedAtMs: Date.now(), channels });
   return channels;
 }
 
@@ -105,11 +129,12 @@ export async function createNotifyContext(
   env: Env,
   ctx: ExecutionContext,
 ): Promise<NotifyContext | null> {
-  const channels = await listActiveWebhookChannels(env.DB);
+  const channels = await listActiveChannels(env.DB);
   return channels.length === 0
     ? null
     : { ctx, envRecord: env as unknown as Record<string, unknown>, channels };
 }
+
 
 export async function listMaintenanceSuppressedMonitorIds(
   db: D1Database,
@@ -266,9 +291,9 @@ export async function emitMaintenanceWindowNotifications(
     };
 
     notify.ctx.waitUntil(
-      getWebhookDispatchModule()
-        .then(({ dispatchWebhookToChannels }) =>
-          dispatchWebhookToChannels({
+      getDispatcherModule()
+        .then(({ dispatchNotificationsToChannels }) =>
+          dispatchNotificationsToChannels({
             db: env.DB,
             env: notify.envRecord,
             channels: channelsForEvent,
@@ -297,9 +322,9 @@ export async function emitMaintenanceWindowNotifications(
     };
 
     notify.ctx.waitUntil(
-      getWebhookDispatchModule()
-        .then(({ dispatchWebhookToChannels }) =>
-          dispatchWebhookToChannels({
+      getDispatcherModule()
+        .then(({ dispatchNotificationsToChannels }) =>
+          dispatchNotificationsToChannels({
             db: env.DB,
             env: notify.envRecord,
             channels: channelsForEvent,
@@ -362,9 +387,9 @@ export function queueMonitorNotification(
   };
 
   notify.ctx.waitUntil(
-    getWebhookDispatchModule()
-      .then(({ dispatchWebhookToChannels }) =>
-        dispatchWebhookToChannels({
+    getDispatcherModule()
+      .then(({ dispatchNotificationsToChannels }) =>
+        dispatchNotificationsToChannels({
           db: env.DB,
           env: notify.envRecord,
           channels: notify.channels,
@@ -374,7 +399,8 @@ export function queueMonitorNotification(
         }),
       )
       .catch((err) => {
-        console.error('notify: failed to dispatch webhooks', err);
+        console.error('notify: failed to dispatch notifications', err);
       }),
   );
 }
+

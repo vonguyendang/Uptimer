@@ -14,7 +14,7 @@ export type CheckStatus = 'up' | 'down' | 'maintenance' | 'unknown';
 export type HttpResponseMatchMode = 'contains' | 'regex';
 export type IncidentStatus = 'investigating' | 'identified' | 'monitoring' | 'resolved';
 export type IncidentImpact = 'none' | 'minor' | 'major' | 'critical';
-export type NotificationChannelType = 'webhook';
+export type NotificationChannelType = 'webhook' | 'email' | 'telegram';
 export type NotificationDeliveryStatus = 'success' | 'failed';
 
 export const monitors = sqliteTable(

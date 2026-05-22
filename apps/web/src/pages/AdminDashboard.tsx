@@ -41,6 +41,9 @@ import type {
   MaintenanceWindow,
   NotificationChannel,
   StatusResponse,
+  WebhookChannelConfig,
+  TelegramChannelConfig,
+  EmailChannelConfig,
 } from '../api/types';
 import { IncidentForm } from '../components/IncidentForm';
 import { IncidentUpdateForm } from '../components/IncidentUpdateForm';
@@ -1789,7 +1792,11 @@ export function AdminDashboard() {
                             <Badge variant="info">{ch.type}</Badge>
                           </td>
                           <td className="px-3 sm:px-4 py-3 text-sm text-slate-500 dark:text-slate-400 truncate max-w-[200px]">
-                            {ch.config_json.url}
+                            {ch.type === 'webhook'
+                              ? (ch.config_json as WebhookChannelConfig).url
+                              : ch.type === 'telegram'
+                              ? `Chat ID: ${(ch.config_json as TelegramChannelConfig).chat_id}`
+                              : `To: ${(ch.config_json as EmailChannelConfig).to}`}
                           </td>
                           <td className="px-3 sm:px-4 py-3 text-right whitespace-nowrap">
                             <div className="flex items-center justify-end gap-1 sm:gap-0">

@@ -1,3 +1,4 @@
+/// <reference types="@cloudflare/workers-types" />
 import { afterEach, describe, expect, it, vi } from 'vitest';
 
 vi.mock('../src/scheduler/lock', () => ({
@@ -34,6 +35,10 @@ import {
   readStaleHomepageSnapshotArtifactJson as readStaleHomepageSnapshotArtifactJsonHot,
 } from '../src/snapshots/public-homepage-read';
 import { createFakeD1Database } from './helpers/fake-d1';
+import type {
+  PublicHomepageResponse,
+  PublicHomepageRenderArtifact,
+} from '../src/schemas/public-homepage';
 
 function samplePayload(now = 1_728_000_000) {
   return {
@@ -64,7 +69,7 @@ function samplePayload(now = 1_728_000_000) {
         id: 1,
         name: 'API',
         type: 'http' as const,
-        group_name: null,
+        group_name: null as string | null,
         status: 'up' as const,
         is_stale: false,
         last_checked_at: now - 30,
@@ -94,16 +99,16 @@ function samplePayload(now = 1_728_000_000) {
 
 function hydrateStoredRenderArtifact(
   artifact: ReturnType<typeof buildHomepageRenderArtifact>,
-) {
-  if ('snapshot' in artifact) {
-    return artifact;
+): PublicHomepageRenderArtifact {
+  if ('snapshot_json' in artifact) {
+    const { snapshot_json, ...rest } = artifact;
+    return {
+      ...rest,
+      snapshot: JSON.parse(snapshot_json) as PublicHomepageResponse,
+    };
   }
 
-  const { snapshot_json: _ignoredSnapshotJson, ...rest } = artifact;
-  return {
-    ...rest,
-    snapshot: JSON.parse(artifact.snapshot_json),
-  };
+  return artifact as PublicHomepageRenderArtifact;
 }
 
 describe('snapshots/public-homepage', () => {
@@ -131,7 +136,7 @@ describe('snapshots/public-homepage', () => {
   it('builds pre-rendered homepage artifact monitor fragments', () => {
     const payload = samplePayload(190);
     payload.monitors[0] = {
-      ...payload.monitors[0],
+      ...payload.monitors[0]!,
       name: '<API & edge>',
       group_name: 'Core',
     };
@@ -145,7 +150,7 @@ describe('snapshots/public-homepage', () => {
       generatedAt: 190,
       updatedAt: 200,
     });
-    const body = JSON.parse(writes[0].bodyJson) as {
+    const body = JSON.parse(writes[0]!.bodyJson) as {
       id: number;
       name: string;
       group_name: string | null;
@@ -181,7 +186,12 @@ describe('snapshots/public-homepage', () => {
     expect(result.staleCount).toBe(0);
     expect(result.invalidCount).toBe(0);
     expect(result.artifact?.preload_html).toContain('PRE-RENDERED API');
-    expect(result.artifact?.snapshot).toEqual(payload);
+    expect(result.artifact).not.toBeNull();
+    const artifact = result.artifact!;
+    expect('snapshot' in artifact).toBe(true);
+    if ('snapshot' in artifact) {
+      expect(artifact.snapshot).toEqual(payload);
+    }
   });
 
   it('rejects incomplete homepage artifact monitor fragments', () => {
@@ -255,7 +265,7 @@ describe('snapshots/public-homepage', () => {
       ...samplePayload(190),
       monitor_count_total: 30,
       monitors: Array.from({ length: 30 }, (_, index) => ({
-        ...samplePayload(190).monitors[0],
+        ...samplePayload(190).monitors[0]!,
         id: index + 1,
         name: `Monitor ${index + 1}`,
       })),
@@ -542,7 +552,7 @@ describe('snapshots/public-homepage', () => {
       bootstrap_mode: 'full' as const,
       monitor_count_total: 30,
       monitors: Array.from({ length: 30 }, (_, index) => ({
-        ...samplePayload(280).monitors[0],
+        ...samplePayload(280).monitors[0]!,
         id: index + 1,
         name: `Monitor ${index + 1}`,
       })),
@@ -786,7 +796,7 @@ describe('snapshots/public-homepage', () => {
       },
     ]);
 
-    let resolveCompute: ((value: ReturnType<typeof samplePayload>) => void) | null = null;
+    let resolveCompute: any = null;
     const compute = vi.fn(
       () =>
         new Promise<ReturnType<typeof samplePayload>>((resolve) => {
@@ -834,7 +844,7 @@ describe('snapshots/public-homepage', () => {
       },
     ]);
 
-    let resolveCompute: ((value: ReturnType<typeof samplePayload>) => void) | null = null;
+    let resolveCompute: any = null;
     const compute = vi.fn(
       () =>
         new Promise<ReturnType<typeof samplePayload>>((resolve) => {
@@ -1242,7 +1252,7 @@ describe('snapshots/public-homepage', () => {
       bootstrap_mode: 'full' as const,
       monitor_count_total: 30,
       monitors: Array.from({ length: 30 }, (_, index) => ({
-        ...samplePayload(now).monitors[0],
+        ...samplePayload(now).monitors[0]!,
         id: index + 1,
         name: `Monitor ${index + 1}`,
       })),

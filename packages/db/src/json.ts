@@ -135,3 +135,23 @@ export const webhookChannelConfigSchema = z
     }
   });
 export type WebhookChannelConfig = z.infer<typeof webhookChannelConfigSchema>;
+
+export const telegramChannelConfigSchema = z.object({
+  bot_token: z.string().min(1),
+  chat_id: z.string().min(1),
+  message_template: z.string().min(1).max(10000).optional(),
+  enabled_events: z.array(notificationEventTypeSchema).min(1).optional(),
+});
+export type TelegramChannelConfig = z.infer<typeof telegramChannelConfigSchema>;
+
+export const emailChannelConfigSchema = z.object({
+  provider: z.enum(['resend', 'sendgrid']),
+  api_key: z.string().min(1),
+  from: z.string().min(1),
+  to: z.string().min(1),
+  subject_template: z.string().min(1).optional(),
+  message_template: z.string().min(1).max(10000).optional(),
+  enabled_events: z.array(notificationEventTypeSchema).min(1).optional(),
+});
+export type EmailChannelConfig = z.infer<typeof emailChannelConfigSchema>;
+

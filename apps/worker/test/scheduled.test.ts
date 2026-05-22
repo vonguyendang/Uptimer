@@ -1,3 +1,4 @@
+/// <reference types="@cloudflare/workers-types" />
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 
 vi.mock('../src/monitor/http', () => ({
@@ -14,9 +15,30 @@ vi.mock('../src/scheduler/lock', () => ({
 vi.mock('../src/settings', () => ({
   readSettings: vi.fn(),
 }));
-vi.mock('../src/notify/webhook', () => ({
-  dispatchWebhookToChannels: vi.fn(),
-}));
+vi.mock('../src/notify/webhook', () => {
+  const dispatchWebhookToChannels = vi.fn();
+  return {
+    dispatchWebhookToChannels,
+    dispatchWebhookToChannel: vi.fn(async (args: {
+      db: unknown;
+      env: unknown;
+      channel: unknown;
+      eventType: string;
+      eventKey: string;
+      payload: unknown;
+    }) => {
+      await dispatchWebhookToChannels({
+        db: args.db,
+        env: args.env,
+        channels: [args.channel],
+        eventType: args.eventType,
+        eventKey: args.eventKey,
+        payload: args.payload,
+      });
+      return 'sent';
+    }),
+  };
+});
 vi.mock('../src/public/homepage', () => ({
   computePublicHomepagePayload: vi.fn(),
 }));
@@ -1372,7 +1394,7 @@ describe('scheduler/scheduled regression', () => {
     env.ADMIN_TOKEN = 'test-admin-token';
     const delayedTime = new Date('2026-02-17T00:02:42.000Z');
     const delayedNow = Math.floor(delayedTime.valueOf() / 1000);
-    let rejectServiceFetch: ((reason?: unknown) => void) | null = null;
+    let rejectServiceFetch: any = null;
     env.SELF = {
       fetch: vi.fn(
         async () =>
@@ -1402,7 +1424,7 @@ describe('scheduler/scheduled regression', () => {
   });
 
   it('uses the current wall clock when writing runtime snapshots after a delayed monitor batch', async () => {
-    let resolveCheck: ((value: unknown) => void) | null = null;
+    let resolveCheck: any = null;
 
     vi.mocked(runHttpCheck).mockImplementation(
       () =>
@@ -1507,7 +1529,7 @@ describe('scheduler/scheduled regression', () => {
 
   it('fails closed when the scheduler lease is lost before persistence', async () => {
     let persistedWrites = 0;
-    let resolveCheck: ((value: unknown) => void) | null = null;
+    let resolveCheck: any = null;
 
     vi.mocked(runHttpCheck).mockImplementation(
       () =>
@@ -1566,7 +1588,7 @@ describe('scheduler/scheduled regression', () => {
   });
 
   it('keeps fixed claimed monitor execution leases during batches within the lease window', async () => {
-    let resolveCheck: ((value: unknown) => void) | null = null;
+    let resolveCheck: any = null;
 
     vi.mocked(runHttpCheck).mockImplementation(
       () =>
@@ -1634,7 +1656,7 @@ describe('scheduler/scheduled regression', () => {
   });
 
   it('fails closed when a fixed claimed monitor execution lease expires before persistence', async () => {
-    let resolveCheck: ((value: unknown) => void) | null = null;
+    let resolveCheck: any = null;
     let persistedWrites = 0;
 
     vi.mocked(runHttpCheck).mockImplementation(
@@ -2461,7 +2483,7 @@ describe('scheduler/scheduled regression', () => {
       await Promise.all(waitUntil.mock.calls.map((call) => call[0] as Promise<unknown>));
 
       expect(errorSpy).toHaveBeenCalledWith(
-        'notify: failed to dispatch webhooks',
+        'notify: failed to dispatch notifications',
         expect.any(Error),
       );
     } finally {

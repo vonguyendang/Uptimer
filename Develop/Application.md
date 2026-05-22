@@ -378,12 +378,12 @@ CREATE TABLE IF NOT EXISTS maintenance_window_monitors (
 CREATE INDEX IF NOT EXISTS idx_maintenance_window_monitors_monitor
   ON maintenance_window_monitors(monitor_id);
 
--- 通知渠道（先做 Webhook；后续可扩展 provider 字段）
+-- 通知渠道（支持 Webhook, Email, Telegram）
 CREATE TABLE IF NOT EXISTS notification_channels (
   id INTEGER PRIMARY KEY AUTOINCREMENT,
   name TEXT NOT NULL,
-  type TEXT NOT NULL CHECK (type IN ('webhook')),
-  config_json TEXT NOT NULL, -- { url, method, headers, payloadTemplate, timeoutMs, ... }
+  type TEXT NOT NULL CHECK (type IN ('webhook', 'email', 'telegram')),
+  config_json TEXT NOT NULL, -- Webhook/Email/Telegram 具体的 JSON 配置结构
   is_active INTEGER NOT NULL DEFAULT 1 CHECK (is_active IN (0,1)),
   created_at INTEGER NOT NULL DEFAULT (CAST(strftime('%s','now') AS INTEGER))
 );
@@ -591,6 +591,31 @@ Webhook Channel `config_json`（建议字段）：
     "enabled": false,
     "secret_ref": "UPTIMER_WEBHOOK_SIGNING_SECRET"
   }
+}
+```
+
+Telegram Channel `config_json` 字段：
+
+```json
+{
+  "bot_token": "123456:ABC-DEF1234ghIkl-zyx57W2v1u123ew11",
+  "chat_id": "-100123456789",
+  "message_template": "Optional custom message template",
+  "enabled_events": ["monitor.down", "monitor.up"]
+}
+```
+
+Email Channel `config_json` 字段：
+
+```json
+{
+  "provider": "resend", // or "sendgrid"
+  "api_key": "re_xxxxxx", // Resend or SendGrid API key
+  "from": "alerts@yourdomain.com",
+  "to": "admin@yourdomain.com",
+  "subject_template": "Optional custom subject template",
+  "message_template": "Optional custom message template",
+  "enabled_events": ["monitor.down", "monitor.up"]
 }
 ```
 
