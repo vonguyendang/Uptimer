@@ -2,7 +2,7 @@ import { z } from 'zod';
 
 import type { PublicStatusResponse } from './public-status';
 
-const SITE_LOCALES = new Set(['auto', 'en', 'zh-CN', 'zh-TW', 'ja', 'es']);
+const SITE_LOCALES = new Set(['auto', 'en', 'zh-CN', 'zh-TW', 'ja', 'es', 'vi']);
 const MONITOR_STATUSES = new Set(['up', 'down', 'maintenance', 'paused', 'unknown']);
 const CHECK_STATUSES = new Set(['up', 'down', 'maintenance', 'unknown']);
 const INCIDENT_STATUSES = new Set(['investigating', 'identified', 'monitoring', 'resolved']);

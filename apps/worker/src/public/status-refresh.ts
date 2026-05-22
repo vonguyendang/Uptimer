@@ -102,6 +102,7 @@ const STATUS_FAST_PUBLIC_LOCALES = new Set<StatusPublicSettings['site_locale']>(
   'zh-TW',
   'ja',
   'es',
+  'vi',
 ]);
 
 function normalizeStatusFastGuardString(

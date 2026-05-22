@@ -69,6 +69,7 @@ const HOMEPAGE_FAST_PUBLIC_LOCALES = new Set<HomepagePublicSettings['site_locale
   'zh-TW',
   'ja',
   'es',
+  'vi',
 ]);
 const nonNegativeIntegerArraySchema = z.array(z.number().int().nonnegative());
 const nullableNonNegativeIntegerArraySchema = z.array(z.number().int().nonnegative().nullable());

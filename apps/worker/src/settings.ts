@@ -11,7 +11,7 @@ export type SettingsResponse = {
   settings: {
     site_title: string;
     site_description: string;
-    site_locale: 'auto' | 'en' | 'zh-CN' | 'zh-TW' | 'ja' | 'es';
+    site_locale: 'auto' | 'en' | 'zh-CN' | 'zh-TW' | 'ja' | 'es' | 'vi';
     site_timezone: string;
 
     retention_check_results_days: number;
@@ -139,6 +139,7 @@ export async function readSettings(
       'zh-TW',
       'ja',
       'es',
+      'vi',
     ] as const) ?? DEFAULTS.site_locale;
   const site_timezone =
     parseStringSetting(map.get('site_timezone'), { max: 64 }) ?? DEFAULTS.site_timezone;

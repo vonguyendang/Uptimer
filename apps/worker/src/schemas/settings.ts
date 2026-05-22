@@ -5,7 +5,7 @@ export const settingsPatchInputSchema = z
     site_title: z.string().min(1).max(100).optional(),
     site_description: z.string().max(500).optional(),
 
-    site_locale: z.enum(['auto', 'en', 'zh-CN', 'zh-TW', 'ja', 'es']).optional(),
+    site_locale: z.enum(['auto', 'en', 'zh-CN', 'zh-TW', 'ja', 'es', 'vi']).optional(),
 
     // IANA timezone, e.g. 'UTC', 'Asia/Shanghai'.
     site_timezone: z.string().min(1).max(64).optional(),

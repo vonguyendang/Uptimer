@@ -2,7 +2,7 @@ import { z } from 'zod';
 
 import type { PublicHomepageResponse } from './public-homepage';
 
-const SITE_LOCALES = new Set(['auto', 'en', 'zh-CN', 'zh-TW', 'ja', 'es']);
+const SITE_LOCALES = new Set(['auto', 'en', 'zh-CN', 'zh-TW', 'ja', 'es', 'vi']);
 const MONITOR_STATUSES = new Set(['up', 'down', 'maintenance', 'paused', 'unknown']);
 const INCIDENT_STATUSES = new Set(['investigating', 'identified', 'monitoring', 'resolved']);
 const INCIDENT_IMPACTS = new Set(['none', 'minor', 'major', 'critical']);

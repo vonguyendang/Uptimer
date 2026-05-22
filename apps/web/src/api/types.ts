@@ -4,7 +4,7 @@ export type MonitorStatus = 'up' | 'down' | 'maintenance' | 'paused' | 'unknown'
 export type CheckStatus = 'up' | 'down' | 'maintenance' | 'unknown';
 export type MonitorType = 'http' | 'tcp';
 export type HttpResponseMatchMode = 'contains' | 'regex';
-export type SupportedLocale = 'en' | 'zh-CN' | 'zh-TW' | 'ja' | 'es';
+export type SupportedLocale = 'en' | 'zh-CN' | 'zh-TW' | 'ja' | 'es' | 'vi';
 export type LocaleSetting = 'auto' | SupportedLocale;
 export type HomepageBootstrapMode = 'full' | 'partial';
 

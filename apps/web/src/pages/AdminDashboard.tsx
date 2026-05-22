@@ -352,6 +352,7 @@ export function AdminDashboard() {
     { value: 'zh-TW', label: localeLabels['zh-TW'] },
     { value: 'ja', label: localeLabels.ja },
     { value: 'es', label: localeLabels.es },
+    { value: 'vi', label: localeLabels.vi },
   ];
 
   useEffect(() => {

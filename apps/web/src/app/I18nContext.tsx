@@ -35,6 +35,7 @@ function localeFromTag(tag: string): SupportedLocale | null {
   if (lower.startsWith('zh')) return 'zh-CN';
   if (lower.startsWith('ja')) return 'ja';
   if (lower.startsWith('es')) return 'es';
+  if (lower.startsWith('vi')) return 'vi';
   if (lower.startsWith('en')) return 'en';
   return null;
 }
