@@ -796,7 +796,7 @@ describe('snapshots/public-homepage', () => {
       },
     ]);
 
-    let resolveCompute: any = null;
+    let resolveCompute: ((value: ReturnType<typeof samplePayload>) => void) | null = null;
     const compute = vi.fn(
       () =>
         new Promise<ReturnType<typeof samplePayload>>((resolve) => {
@@ -844,7 +844,7 @@ describe('snapshots/public-homepage', () => {
       },
     ]);
 
-    let resolveCompute: any = null;
+    let resolveCompute: ((value: ReturnType<typeof samplePayload>) => void) | null = null;
     const compute = vi.fn(
       () =>
         new Promise<ReturnType<typeof samplePayload>>((resolve) => {

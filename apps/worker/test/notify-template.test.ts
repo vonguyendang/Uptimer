@@ -1,9 +1,11 @@
 import { describe, expect, it } from 'vitest';
 
 import {
+  buildNotificationMessage,
   defaultMessageForEvent,
   renderJsonTemplate,
   renderStringTemplate,
+  shouldSendEvent,
 } from '../src/notify/template';
 
 describe('notify/template', () => {
@@ -104,5 +106,65 @@ describe('notify/template', () => {
     expect(defaultMessageForEvent('custom.event', { event: circular })).toBe(
       'Uptimer event: [object Object]',
     );
+  });
+  it('shouldSendEvent passes test.ping always, passes all events when list empty, filters otherwise', () => {
+    expect(shouldSendEvent({}, 'test.ping')).toBe(true);
+    expect(shouldSendEvent({ enabled_events: [] }, 'monitor.down')).toBe(true);
+    expect(shouldSendEvent({ enabled_events: ['monitor.down'] }, 'monitor.down')).toBe(true);
+    expect(shouldSendEvent({ enabled_events: ['monitor.down'] }, 'monitor.up')).toBe(false);
+    expect(shouldSendEvent({ enabled_events: ['monitor.down'] }, 'test.ping')).toBe(true);
+  });
+
+  it('buildNotificationMessage renders vars and default message correctly', () => {
+    const args = {
+      channelId: 5,
+      channelName: 'Ops',
+      eventType: 'monitor.down',
+      eventKey: 'monitor:1:down:1700000000',
+      payload: { monitor: { id: 1, name: 'API', target: 'https://api.example.com' }, state: { status: 'down' } },
+      now: 1700000000,
+    };
+
+    const result = buildNotificationMessage(args);
+
+    expect(result.message).toContain('Monitor DOWN: API');
+    expect(result.vars.event).toBe('monitor.down');
+    expect(result.vars.event_id).toBe('monitor:1:down:1700000000');
+    expect(result.vars.timestamp).toBe(1700000000);
+    expect((result.vars.channel as { id: number; name: string }).id).toBe(5);
+    expect(result.vars.default_message).toBe(result.vars.message);
+  });
+
+  it('buildNotificationMessage uses messageTemplate when provided', () => {
+    const args = {
+      channelId: 1,
+      channelName: 'Test',
+      messageTemplate: 'ALERT: {{monitor.name}}',
+      eventType: 'monitor.up',
+      eventKey: 'monitor:1:up:1700000001',
+      payload: { monitor: { id: 1, name: 'DB', target: 'db.example.com' }, state: { status: 'up' } },
+      now: 1700000001,
+    };
+
+    const result = buildNotificationMessage(args);
+
+    expect(result.message).toBe('ALERT: DB');
+    expect(result.vars.message).toBe('ALERT: DB');
+  });
+
+  it('buildNotificationMessage handles non-object payloads gracefully', () => {
+    const args = {
+      channelId: 2,
+      channelName: 'Chan',
+      eventType: 'test.ping',
+      eventKey: 'test:webhook:2:1700000002',
+      payload: null,
+      now: 1700000002,
+    };
+
+    const result = buildNotificationMessage(args);
+
+    expect(result.message).toBe('Uptimer test notification');
+    expect(result.vars.payload).toBeNull();
   });
 });
