@@ -22,7 +22,7 @@ import { Markdown } from '../components/Markdown';
 import { MonitorCard } from '../components/MonitorCard';
 import { incidentImpactLabel, incidentStatusLabel } from '../i18n/labels';
 import { formatDateTime, getBrowserTimeZone } from '../utils/datetime';
-import { Badge, Card, MODAL_OVERLAY_CLASS, MODAL_PANEL_CLASS, ThemeToggle } from '../components/ui';
+import { Badge, Card, MODAL_OVERLAY_CLASS, MODAL_PANEL_CLASS, ThemeToggle, INPUT_CLASS, SELECT_CLASS, cn } from '../components/ui';
 
 type BannerStatus = PublicHomepageResponse['banner']['status'];
 type IncidentCardData = IncidentSummary | Incident;
@@ -365,6 +365,8 @@ export function StatusPage() {
   const [selectedDay, setSelectedDay] = useState<{ monitorId: number; dayStartAt: number } | null>(
     null,
   );
+  const [searchQuery, setSearchQuery] = useState('');
+  const [statusFilter, setStatusFilter] = useState('all');
 
   const homepageQuery = useQuery({
     queryKey: ['homepage'],
@@ -445,7 +447,19 @@ export function StatusPage() {
 
   const groupedMonitors = useMemo(() => {
     const groups = new Map<string, PublicHomepageResponse['monitors']>();
-    for (const monitor of homepageQuery.data?.monitors ?? []) {
+    
+    let filteredMonitors = homepageQuery.data?.monitors ?? [];
+    
+    if (searchQuery.trim()) {
+      const q = searchQuery.toLowerCase();
+      filteredMonitors = filteredMonitors.filter((m) => m.name.toLowerCase().includes(q));
+    }
+    
+    if (statusFilter !== 'all') {
+      filteredMonitors = filteredMonitors.filter((m) => m.status === statusFilter);
+    }
+
+    for (const monitor of filteredMonitors) {
       const key = monitorGroupLabel(monitor.group_name, t('status_page.group_ungrouped'));
       const list = groups.get(key) ?? [];
       list.push(monitor);
@@ -453,7 +467,7 @@ export function StatusPage() {
     }
 
     return [...groups.entries()].map(([name, monitors]) => ({ name, monitors }));
-  }, [homepageQuery.data?.monitors, t]);
+  }, [homepageQuery.data?.monitors, t, searchQuery, statusFilter]);
   const monitorNames = useMemo(
     () => new Map((homepageQuery.data?.monitors ?? []).map((m) => [m.id, m.name] as const)),
     [homepageQuery.data?.monitors],
@@ -663,9 +677,31 @@ export function StatusPage() {
 
         {/* Monitors */}
         <section>
-          <h3 className="text-base sm:text-lg font-semibold text-slate-900 dark:text-slate-100 mb-2.5 sm:mb-3">
-            {t('status_page.services')}
-          </h3>
+          <div className="flex flex-col sm:flex-row sm:items-center justify-between mb-4 gap-3">
+            <h3 className="text-base sm:text-lg font-semibold text-slate-900 dark:text-slate-100">
+              {t('status_page.services')}
+            </h3>
+            <div className="flex flex-col sm:flex-row gap-2 w-full sm:w-auto">
+              <input
+                type="text"
+                placeholder={t('status_page.search_services')}
+                className={cn(INPUT_CLASS, "sm:w-64")}
+                value={searchQuery}
+                onChange={(e) => setSearchQuery(e.target.value)}
+              />
+              <select
+                className={SELECT_CLASS}
+                value={statusFilter}
+                onChange={(e) => setStatusFilter(e.target.value)}
+              >
+                <option value="all">{t('status_page.filter_all')}</option>
+                <option value="up">{t('status_page.filter_up')}</option>
+                <option value="down">{t('status_page.filter_down')}</option>
+                <option value="maintenance">{t('status_page.filter_maintenance')}</option>
+                <option value="paused">{t('status_page.filter_paused')}</option>
+              </select>
+            </div>
+          </div>
           <div className="space-y-5">
             {groupedMonitors.map((group) => (
               <div key={group.name}>
@@ -694,11 +730,15 @@ export function StatusPage() {
               </div>
             ))}
           </div>
-          {data.monitors.length === 0 && (
+          {data.monitors.length === 0 ? (
             <Card className="p-8 text-center">
               <p className="text-slate-500 dark:text-slate-400">{t('status_page.no_monitors')}</p>
             </Card>
-          )}
+          ) : groupedMonitors.length === 0 ? (
+            <Card className="p-8 text-center">
+              <p className="text-slate-500 dark:text-slate-400">{t('status_page.no_results')}</p>
+            </Card>
+          ) : null}
         </section>
 
         <section className="mt-6 pt-5 sm:mt-8 sm:pt-6 border-t border-slate-100 dark:border-slate-800 space-y-6 sm:space-y-8">
