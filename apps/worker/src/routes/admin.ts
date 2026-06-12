@@ -911,12 +911,20 @@ function sanitizeNotificationConfigForApi(
   };
 }
 
-function parseChannelConfig(type: string, configJson: string): AnyNotificationChannel['config'] {
+function parseChannelConfigForApi(type: string, configJson: string): AnyNotificationChannel['config'] {
   if (type === 'email') {
     return parseDbJson(emailChannelConfigSchema, configJson, { field: 'config_json' });
   } else {
     const config = parseDbJson(webhookChannelConfigSchema, configJson, { field: 'config_json' });
     return sanitizeNotificationConfigForApi(config);
+  }
+}
+
+function parseInternalChannelConfig(type: string, configJson: string): AnyNotificationChannel['config'] {
+  if (type === 'email') {
+    return parseDbJson(emailChannelConfigSchema, configJson, { field: 'config_json' });
+  } else {
+    return parseDbJson(webhookChannelConfigSchema, configJson, { field: 'config_json' });
   }
 }
 
@@ -933,7 +941,7 @@ function notificationChannelRowToApi(row: NotificationChannelRow) {
     id: row.id,
     name: row.name,
     type: row.type,
-    config_json: parseChannelConfig(row.type, row.config_json),
+    config_json: parseChannelConfigForApi(row.type, row.config_json),
     is_active: row.is_active === 1,
     created_at: row.created_at,
   };
@@ -1116,7 +1124,7 @@ async function listActiveChannels(db: D1Database): Promise<AnyNotificationChanne
     id: r.id,
     name: r.name,
     type: r.type as AnyNotificationChannel['type'],
-    config: parseChannelConfig(r.type, r.config_json),
+    config: parseInternalChannelConfig(r.type, r.config_json),
   } as unknown as AnyNotificationChannel));
 }
 
@@ -1365,7 +1373,7 @@ adminRoutes.post('/notification-channels/:id/test', async (c) => {
     throw new AppError(404, 'NOT_FOUND', 'Notification channel not found');
   }
 
-  const config = parseChannelConfig(channelRow.type, channelRow.config_json);
+  const config = parseInternalChannelConfig(channelRow.type, channelRow.config_json);
   const channel = {
     id: channelRow.id,
     name: channelRow.name,
