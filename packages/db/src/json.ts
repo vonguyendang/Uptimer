@@ -177,11 +177,11 @@ export const telegramChannelConfigSchema = z
     const hasSecretRef =
       typeof val.bot_token_secret_ref === 'string' && val.bot_token_secret_ref.trim().length > 0;
 
-    if (hasEncryptedToken === hasSecretRef) {
+    if (hasEncryptedToken && hasSecretRef) {
       ctx.addIssue({
         code: z.ZodIssueCode.custom,
         path: ['bot_token_encrypted'],
-        message: 'provide exactly one of bot_token_encrypted or bot_token_secret_ref',
+        message: 'provide only one of bot_token_encrypted or bot_token_secret_ref',
       });
     }
   });

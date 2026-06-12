@@ -111,16 +111,21 @@ async function listActiveChannels(db: D1Database): Promise<NotificationChannelWi
 
   const { results } = await statement.all<ActiveChannelRow>();
 
-  const channels = (results ?? []).map((r) => {
-    const config = parseChannelConfig(r.type, r.config_json);
-    return {
-      id: r.id,
-      name: r.name,
-      type: (r.type || 'webhook') as AnyNotificationChannel['type'],
-      config,
-      created_at: r.created_at,
-    } as unknown as NotificationChannelWithMeta;
-  });
+  const channels: NotificationChannelWithMeta[] = [];
+  for (const r of results ?? []) {
+    try {
+      const config = parseChannelConfig(r.type, r.config_json);
+      channels.push({
+        id: r.id,
+        name: r.name,
+        type: (r.type || 'webhook') as AnyNotificationChannel['type'],
+        config,
+        created_at: r.created_at,
+      } as unknown as NotificationChannelWithMeta);
+    } catch (err) {
+      console.warn(`notify: failed to parse config for channel ${r.id} (${r.name})`, err);
+    }
+  }
 
   activeChannelsCacheByDb.set(db, { fetchedAtMs: Date.now(), channels });
   return channels;
