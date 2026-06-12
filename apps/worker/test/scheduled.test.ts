@@ -2012,6 +2012,7 @@ describe('scheduler/scheduled regression', () => {
       method: 'GET',
       headers: null,
       body: null,
+      followRedirects: true,
       expectedStatus: null,
       responseKeyword: null,
       responseKeywordMode: null,
@@ -2078,12 +2079,51 @@ describe('scheduler/scheduled regression', () => {
       method: 'GET',
       headers: null,
       body: null,
+      followRedirects: true,
       expectedStatus: null,
       responseKeyword: '^ready:\\\\d+$',
       responseKeywordMode: 'regex',
       responseForbiddenKeyword: 'error',
       responseForbiddenKeywordMode: 'contains',
     });
+  });
+
+  it('passes disabled redirect following through scheduled HTTP checks', async () => {
+    const dueRows = [
+      {
+        id: 103,
+        name: 'Redirect API',
+        type: 'http',
+        target: 'https://example.com/redirect',
+        interval_sec: 60,
+        timeout_ms: 5000,
+        http_method: 'GET',
+        http_headers_json: null,
+        http_body: null,
+        follow_redirects: 0,
+        expected_status_json: JSON.stringify([302]),
+        response_keyword: null,
+        response_keyword_mode: null,
+        response_forbidden_keyword: null,
+        response_forbidden_keyword_mode: null,
+        state_status: 'up',
+        state_last_error: null,
+        last_changed_at: 1700000000,
+        consecutive_failures: 0,
+        consecutive_successes: 2,
+      },
+    ];
+    const env = createEnv({ dueRows });
+
+    await runScheduledTick(env, { waitUntil: vi.fn() } as unknown as ExecutionContext);
+
+    expect(runHttpCheck).toHaveBeenCalledWith(
+      expect.objectContaining({
+        url: 'https://example.com/redirect',
+        followRedirects: false,
+        expectedStatus: [302],
+      }),
+    );
   });
 
   it('batches persistence for multiple due monitors', async () => {
@@ -2155,6 +2195,7 @@ describe('scheduler/scheduled regression', () => {
         name: 'Core API',
         type: 'http',
         target: 'https://api.example.com/health',
+        display_url: 'https://status.example.com/api',
         interval_sec: 60,
         timeout_ms: 5000,
         http_method: 'GET',
@@ -2203,6 +2244,8 @@ describe('scheduler/scheduled regression', () => {
           monitor: expect.objectContaining({
             id: 201,
             name: 'Core API',
+            target: 'https://api.example.com/health',
+            display_url: 'https://status.example.com/api',
           }),
           state: expect.objectContaining({
             status: 'down',

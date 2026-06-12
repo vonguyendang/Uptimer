@@ -52,7 +52,7 @@ import {
 } from './visibility';
 
 const PREVIEW_BATCH_LIMIT = 50;
-const UPTIME_DAYS = 30;
+const UPTIME_DAYS = 60;
 const HEARTBEAT_POINTS = 60;
 const HOMEPAGE_FAST_PATCH_BASE_MAX_AGE_SECONDS = 75;
 const HOMEPAGE_FAST_PATCH_UPDATE_GRACE_SECONDS = 15;
@@ -78,6 +78,7 @@ type HomepageMonitorRow = {
   id: number;
   name: string;
   type: string;
+  display_url: string | null;
   group_name: string | null;
   interval_sec: number;
   created_at: number;
@@ -485,6 +486,7 @@ function toHomepageMonitorCard(
     id: row.id,
     name: row.name,
     type: toHomepageMonitorType(row.type),
+    display_url: row.display_url ?? null,
     group_name: row.group_name?.trim() ? row.group_name.trim() : null,
     status: presentation.status,
     is_stale: presentation.is_stale,
@@ -685,6 +687,7 @@ function buildHomepageMonitorRowsFromBaseSnapshot(
         id: monitor.id,
         name: monitor.name,
         type: monitor.type,
+        display_url: monitor.display_url ?? null,
         group_name: monitor.group_name,
         interval_sec: runtimeEntry.interval_sec,
         created_at: runtimeEntry.created_at,
@@ -717,6 +720,7 @@ async function listHomepageMonitorRows(
         m.id,
         m.name,
         m.type,
+        m.display_url,
         m.group_name,
         m.interval_sec,
         m.created_at,
@@ -920,7 +924,7 @@ async function buildHomepageMonitorCardsFromRows(
   const placeholders = buildNumberedPlaceholders(selectedIds.length);
   const todayStartAt = utcDayStart(now);
   // Always compute a partial "today" bucket whenever we're inside the current UTC day.
-  // This avoids missing uptime strips / 30d uptime immediately after a fresh deployment.
+  // This avoids missing uptime strips / 60d uptime immediately after a fresh deployment.
   const needsToday = rangeEnd > rangeEndFullDays;
   const monitors = rows.map((row) => toHomepageMonitorCard(row, now, maintenanceMonitorIds));
   const baseMonitorsById = baseSnapshot ? getHomepageSnapshotMonitorById(baseSnapshot) : null;
@@ -1514,6 +1518,7 @@ export function homepageFromStatusPayload(
       id: monitor.id,
       name: monitor.name,
       type: monitor.type,
+      display_url: monitor.display_url ?? null,
       group_name: monitor.group_name,
       status: monitor.status,
       is_stale: monitor.is_stale,

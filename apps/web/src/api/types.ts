@@ -106,6 +106,7 @@ export interface PublicMonitor {
   id: number;
   name: string;
   type: MonitorType;
+  display_url: string | null;
   group_name: string | null;
   group_sort_order: number;
   sort_order: number;
@@ -175,6 +176,7 @@ export interface HomepageMonitorCard {
   id: number;
   name: string;
   type: MonitorType;
+  display_url: string | null;
   group_name: string | null;
   status: MonitorStatus;
   is_stale: boolean;
@@ -343,6 +345,7 @@ export interface AdminMonitor {
   name: string;
   type: MonitorType;
   target: string;
+  display_url: string | null;
   group_name: string | null;
   group_sort_order: number;
   sort_order: number;
@@ -352,6 +355,7 @@ export interface AdminMonitor {
   http_method: string | null;
   http_headers_json: Record<string, string> | null;
   http_body: string | null;
+  follow_redirects: boolean;
   expected_status_json: number[] | null;
   response_keyword: string | null;
   response_keyword_mode: HttpResponseMatchMode | null;
@@ -372,6 +376,7 @@ export interface CreateMonitorInput {
   name: string;
   type: MonitorType;
   target: string;
+  display_url?: string | null;
   group_name?: string;
   group_sort_order?: number;
   sort_order?: number;
@@ -381,6 +386,7 @@ export interface CreateMonitorInput {
   http_method?: string;
   http_headers_json?: Record<string, string>;
   http_body?: string;
+  follow_redirects?: boolean;
   expected_status_json?: number[];
   response_keyword?: string;
   response_keyword_mode?: HttpResponseMatchMode;
@@ -392,6 +398,7 @@ export interface CreateMonitorInput {
 export interface PatchMonitorInput {
   name?: string;
   target?: string;
+  display_url?: string | null;
   group_name?: string | null;
   group_sort_order?: number;
   sort_order?: number;
@@ -401,6 +408,7 @@ export interface PatchMonitorInput {
   http_method?: string;
   http_headers_json?: Record<string, string> | null;
   http_body?: string | null;
+  follow_redirects?: boolean;
   expected_status_json?: number[] | null;
   response_keyword?: string | null;
   response_keyword_mode?: HttpResponseMatchMode | null;
@@ -444,7 +452,11 @@ export interface MonitorTestResult {
   };
 }
 
-export interface WebhookChannelConfig {
+export type NotificationChannelPreset = 'custom' | 'telegram';
+export type TelegramParseMode = 'Markdown' | 'MarkdownV2' | 'HTML';
+
+export interface CustomWebhookChannelConfig {
+  preset?: 'custom';
   url: string;
   method?: 'GET' | 'POST' | 'PUT' | 'PATCH' | 'DELETE' | 'HEAD';
   headers?: Record<string, string>;
@@ -469,19 +481,19 @@ export interface WebhookChannelConfig {
 }
 
 export interface TelegramChannelConfig {
-  bot_token: string;
+  preset: 'telegram';
+  bot_token?: string;
+  bot_token_secret_ref?: string;
+  bot_token_configured?: boolean;
+  bot_token_source?: 'stored' | 'secret_ref';
   chat_id: string;
+  message_thread_id?: number;
+  timeout_ms?: number;
   message_template?: string;
-  enabled_events?: Array<
-    | 'monitor.down'
-    | 'monitor.up'
-    | 'incident.created'
-    | 'incident.updated'
-    | 'incident.resolved'
-    | 'maintenance.started'
-    | 'maintenance.ended'
-    | 'test.ping'
-  >;
+  enabled_events?: CustomWebhookChannelConfig['enabled_events'];
+  parse_mode?: TelegramParseMode;
+  disable_notification?: boolean;
+  protect_content?: boolean;
 }
 
 export interface EmailChannelConfig {
@@ -491,27 +503,19 @@ export interface EmailChannelConfig {
   to: string;
   subject_template?: string;
   message_template?: string;
-  enabled_events?: Array<
-    | 'monitor.down'
-    | 'monitor.up'
-    | 'incident.created'
-    | 'incident.updated'
-    | 'incident.resolved'
-    | 'maintenance.started'
-    | 'maintenance.ended'
-    | 'test.ping'
-  >;
+  enabled_events?: CustomWebhookChannelConfig['enabled_events'];
 }
+
+export type WebhookChannelConfig = CustomWebhookChannelConfig | TelegramChannelConfig;
 
 export type AnyNotificationChannelConfig =
   | WebhookChannelConfig
-  | TelegramChannelConfig
   | EmailChannelConfig;
 
 export interface NotificationChannel {
   id: number;
   name: string;
-  type: 'webhook' | 'telegram' | 'email';
+  type: 'webhook' | 'email';
   config_json: AnyNotificationChannelConfig;
   is_active: boolean;
   created_at: number;
@@ -519,7 +523,7 @@ export interface NotificationChannel {
 
 export interface CreateNotificationChannelInput {
   name: string;
-  type: 'webhook' | 'telegram' | 'email';
+  type: 'webhook' | 'email';
   config_json: AnyNotificationChannelConfig;
   is_active?: boolean;
 }

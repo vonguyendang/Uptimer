@@ -4,6 +4,7 @@ import { z } from 'zod';
 import {
   asc,
   eq,
+  type CustomWebhookChannelConfig,
   expectedStatusJsonSchema,
   getDb,
   httpHeadersJsonSchema,
@@ -13,6 +14,8 @@ import {
   parseDbJsonNullable,
   serializeDbJson,
   serializeDbJsonNullable,
+  type TelegramChannelConfig,
+  type WebhookChannelConfig,
   webhookChannelConfigSchema,
   telegramChannelConfigSchema,
   emailChannelConfigSchema,
@@ -38,6 +41,7 @@ import {
 import { validateHttpTarget, validateTcpTarget } from '../monitor/targets';
 import { runTcpCheck } from '../monitor/tcp';
 import type { AnyNotificationChannel } from '../notify/dispatcher';
+import { encryptTelegramBotToken } from '../notify/telegram-token';
 import { adminAnalyticsRoutes } from './admin-analytics';
 import { adminExportsRoutes } from './admin-exports';
 import { adminSettingsRoutes } from './admin-settings';
@@ -59,6 +63,8 @@ import {
 import {
   createNotificationChannelInputSchema,
   patchNotificationChannelInputSchema,
+  type TelegramChannelCreateInput,
+  type TelegramChannelPatchInput,
 } from '../schemas/notification-channels';
 
 export const adminRoutes = new Hono<{ Bindings: Env }>();
@@ -259,6 +265,7 @@ function monitorRowToApi(
     name: row.name,
     type: row.type,
     target: row.target,
+    display_url: row.displayUrl,
     interval_sec: row.intervalSec,
     timeout_ms: row.timeoutMs,
     http_method: row.httpMethod,
@@ -266,6 +273,7 @@ function monitorRowToApi(
       field: 'http_headers_json',
     }),
     http_body: row.httpBody,
+    follow_redirects: row.followRedirects,
     expected_status_json: parseDbJsonNullable(expectedStatusJsonSchema, row.expectedStatusJson, {
       field: 'expected_status_json',
     }),
@@ -429,6 +437,7 @@ adminRoutes.post('/monitors', async (c) => {
       name: input.name,
       type: input.type,
       target: input.target,
+      displayUrl: input.display_url ?? null,
       intervalSec: input.interval_sec ?? 60,
       timeoutMs: input.timeout_ms ?? 10000,
 
@@ -440,6 +449,7 @@ adminRoutes.post('/monitors', async (c) => {
             })
           : null,
       httpBody: input.type === 'http' ? (input.http_body ?? null) : null,
+      followRedirects: input.type === 'http' ? (input.follow_redirects ?? true) : true,
       expectedStatusJson:
         input.type === 'http'
           ? serializeDbJsonNullable(expectedStatusJsonSchema, input.expected_status_json ?? null, {
@@ -449,7 +459,10 @@ adminRoutes.post('/monitors', async (c) => {
       responseKeyword: input.type === 'http' ? (input.response_keyword ?? null) : null,
       responseKeywordMode:
         input.type === 'http'
-          ? normalizeAssertionModeForStorage(input.response_keyword ?? null, input.response_keyword_mode)
+          ? normalizeAssertionModeForStorage(
+              input.response_keyword ?? null,
+              input.response_keyword_mode,
+            )
           : null,
       responseForbiddenKeyword:
         input.type === 'http' ? (input.response_forbidden_keyword ?? null) : null,
@@ -512,6 +525,7 @@ adminRoutes.patch('/monitors/:id', async (c) => {
       'http_method',
       'http_headers_json',
       'http_body',
+      'follow_redirects',
       'expected_status_json',
       'response_keyword',
       'response_keyword_mode',
@@ -542,7 +556,9 @@ adminRoutes.patch('/monitors/:id', async (c) => {
     input.response_keyword !== undefined ? input.response_keyword : existing.responseKeyword;
   const nextResponseKeywordMode = normalizeAssertionModeForStorage(
     nextResponseKeyword,
-    input.response_keyword_mode !== undefined ? input.response_keyword_mode : existing.responseKeywordMode,
+    input.response_keyword_mode !== undefined
+      ? input.response_keyword_mode
+      : existing.responseKeywordMode,
   );
   const nextResponseForbiddenKeyword =
     input.response_forbidden_keyword !== undefined
@@ -567,6 +583,7 @@ adminRoutes.patch('/monitors/:id', async (c) => {
     .set({
       name: input.name ?? existing.name,
       target: input.target ?? existing.target,
+      displayUrl: input.display_url !== undefined ? input.display_url : existing.displayUrl,
       intervalSec: input.interval_sec ?? existing.intervalSec,
       timeoutMs: input.timeout_ms ?? existing.timeoutMs,
       httpMethod: input.http_method !== undefined ? input.http_method : existing.httpMethod,
@@ -577,6 +594,8 @@ adminRoutes.patch('/monitors/:id', async (c) => {
             })
           : existing.httpHeadersJson,
       httpBody: input.http_body !== undefined ? input.http_body : existing.httpBody,
+      followRedirects:
+        input.follow_redirects !== undefined ? input.follow_redirects : existing.followRedirects,
       expectedStatusJson:
         input.expected_status_json !== undefined
           ? serializeDbJsonNullable(expectedStatusJsonSchema, input.expected_status_json, {
@@ -661,6 +680,7 @@ adminRoutes.post('/monitors/:id/test', async (c) => {
         field: 'http_headers_json',
       }),
       body: monitor.httpBody,
+      followRedirects: monitor.followRedirects,
       expectedStatus: parseDbJsonNullable(expectedStatusJsonSchema, monitor.expectedStatusJson, {
         field: 'expected_status_json',
       }),
@@ -794,33 +814,118 @@ type NotificationChannelRow = {
   created_at: number;
 };
 
+type NotificationChannelInputConfig =
+  | CustomWebhookChannelConfig
+  | TelegramChannelCreateInput
+  | TelegramChannelPatchInput;
+
+type TelegramApiChannelConfig = Omit<TelegramChannelConfig, 'bot_token_encrypted'> & {
+  bot_token_configured: boolean;
+  bot_token_source: 'stored' | 'secret_ref';
+};
+
+type NotificationChannelApiConfig = CustomWebhookChannelConfig | TelegramApiChannelConfig;
+
+function isTelegramInputConfig(
+  config: NotificationChannelInputConfig,
+): config is TelegramChannelCreateInput | TelegramChannelPatchInput {
+  return config.preset === 'telegram';
+}
+
+function isTelegramStoredConfig(
+  config: WebhookChannelConfig | undefined,
+): config is TelegramChannelConfig {
+  return config?.preset === 'telegram';
+}
+
+async function normalizeNotificationConfigForStorage(
+  env: Env,
+  inputConfig: NotificationChannelInputConfig,
+  existingConfig?: WebhookChannelConfig,
+): Promise<WebhookChannelConfig> {
+  if (!isTelegramInputConfig(inputConfig)) {
+    return inputConfig;
+  }
+
+  const {
+    bot_token: botToken,
+    bot_token_secret_ref: botTokenSecretRef,
+    ...telegramConfig
+  } = inputConfig;
+  const baseTelegramConfig = isTelegramStoredConfig(existingConfig) ? existingConfig : undefined;
+
+  if (botToken) {
+    const adminToken = env.ADMIN_TOKEN?.trim();
+    if (!adminToken) {
+      throw new AppError(500, 'INTERNAL', 'Admin token not configured');
+    }
+
+    return {
+      ...telegramConfig,
+      bot_token_encrypted: await encryptTelegramBotToken(adminToken, botToken),
+    };
+  }
+
+  if (botTokenSecretRef) {
+    return {
+      ...telegramConfig,
+      bot_token_secret_ref: botTokenSecretRef,
+    };
+  }
+
+  if (baseTelegramConfig?.bot_token_encrypted) {
+    return {
+      ...telegramConfig,
+      bot_token_encrypted: baseTelegramConfig.bot_token_encrypted,
+    };
+  }
+
+  if (baseTelegramConfig?.bot_token_secret_ref) {
+    return {
+      ...telegramConfig,
+      bot_token_secret_ref: baseTelegramConfig.bot_token_secret_ref,
+    };
+  }
+
+  throw new AppError(400, 'INVALID_ARGUMENT', 'Telegram bot token is required');
+}
+
+function sanitizeNotificationConfigForApi(
+  config: WebhookChannelConfig,
+): NotificationChannelApiConfig {
+  if (!isTelegramStoredConfig(config)) {
+    return config;
+  }
+
+  const { bot_token_encrypted: encryptedToken, ...telegramConfig } = config;
+
+  return {
+    ...telegramConfig,
+    bot_token_configured: Boolean(encryptedToken || telegramConfig.bot_token_secret_ref),
+    bot_token_source: telegramConfig.bot_token_secret_ref ? 'secret_ref' : 'stored',
+  };
+
 function parseChannelConfig(type: string, configJson: string): AnyNotificationChannel['config'] {
-  switch (type) {
-    case 'webhook':
-      return parseDbJson(webhookChannelConfigSchema, configJson, { field: 'config_json' });
-    case 'telegram':
-      return parseDbJson(telegramChannelConfigSchema, configJson, { field: 'config_json' });
-    case 'email':
-      return parseDbJson(emailChannelConfigSchema, configJson, { field: 'config_json' });
-    default:
-      throw new Error(`Unsupported channel type: ${type}`);
+  if (type === 'email') {
+    return parseDbJson(emailChannelConfigSchema, configJson, { field: 'config_json' });
+  } else {
+    const config = parseDbJson(webhookChannelConfigSchema, configJson, { field: 'config_json' });
+    return sanitizeNotificationConfigForApi(config);
   }
 }
 
 function serializeChannelConfig(type: string, config: AnyNotificationChannel['config']): string {
-  switch (type) {
-    case 'webhook':
-      return serializeDbJson(webhookChannelConfigSchema, config, { field: 'config_json' });
-    case 'telegram':
-      return serializeDbJson(telegramChannelConfigSchema, config, { field: 'config_json' });
-    case 'email':
-      return serializeDbJson(emailChannelConfigSchema, config, { field: 'config_json' });
-    default:
-      throw new Error(`Unsupported channel type: ${type}`);
+  if (type === 'email') {
+    return serializeDbJson(emailChannelConfigSchema, config, { field: 'config_json' });
+  } else {
+    return serializeDbJson(webhookChannelConfigSchema, config, { field: 'config_json' });
   }
+}
 }
 
 function notificationChannelRowToApi(row: NotificationChannelRow) {
+  const config = parseDbJson(webhookChannelConfigSchema, row.config_json, { field: 'config_json' });
+
   return {
     id: row.id,
     name: row.name,
@@ -863,7 +968,14 @@ adminRoutes.post('/notification-channels', async (c) => {
 
   const now = Math.floor(Date.now() / 1000);
   const isActive = input.is_active ?? true;
-  const configJson = serializeChannelConfig(input.type, input.config_json);
+
+  let configJson: string;
+  if (input.type === 'email') {
+    configJson = serializeChannelConfig('email', input.config_json);
+  } else {
+    const storageConfig = await normalizeNotificationConfigForStorage(c.env, input.config_json);
+    configJson = serializeDbJson(webhookChannelConfigSchema, storageConfig, { field: 'config_json' });
+  }
 
   const row = await c.env.DB.prepare(
     `
@@ -907,9 +1019,21 @@ adminRoutes.patch('/notification-channels/:id', async (c) => {
   const nextName = input.name ?? existing.name;
   const nextIsActive =
     input.is_active !== undefined ? (input.is_active ? 1 : 0) : existing.is_active;
+  const existingConfig = parseDbJson(webhookChannelConfigSchema, existing.config_json, {
+    field: 'config_json',
+  });
   const nextConfigJson =
     input.config_json !== undefined
-      ? serializeChannelConfig(existing.type, input.config_json)
+
+      ? (
+          existing.type === 'email'
+            ? serializeChannelConfig('email', input.config_json)
+            : serializeDbJson(
+                webhookChannelConfigSchema,
+                await normalizeNotificationConfigForStorage(c.env, input.config_json, existingConfig),
+                { field: 'config_json' }
+              )
+        )
       : existing.config_json;
 
   const updated = await c.env.DB.prepare(

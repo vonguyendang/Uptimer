@@ -63,10 +63,13 @@ const heartbeatSchema = z.object({
   latency_ms: z.number().int().nonnegative().nullable(),
 });
 
+const displayUrlSchema = z.string().url().nullable().catch(null);
+
 const storedPublicMonitorSchema = z.object({
   id: z.number().int().positive(),
   name: z.string(),
   type: z.enum(['http', 'tcp']),
+  display_url: displayUrlSchema,
   group_name: z.string().min(1).nullable(),
   group_sort_order: z.number().int(),
   sort_order: z.number().int(),
@@ -84,6 +87,7 @@ const publicMonitorSchema = z.object({
   id: z.number().int().positive(),
   name: z.string(),
   type: z.enum(['http', 'tcp']),
+  display_url: displayUrlSchema,
   group_name: z.string().min(1).nullable(),
   group_sort_order: z.number().int(),
   sort_order: z.number().int(),
@@ -96,10 +100,10 @@ const publicMonitorSchema = z.object({
   // Last N checks (bounded in payload) for heartbeat bar.
   heartbeats: z.array(heartbeatSchema).optional().default([]),
 
-  // 30-day availability computed from daily rollups (UTC full days).
+  // 60-day availability computed from daily rollups (UTC full days).
   uptime_30d: uptimeSummarySchema.nullable(),
 
-  // 30 daily points (oldest -> newest). Each entry is the day's total uptime.
+  // 60 daily points (oldest -> newest). Each entry is the day's total uptime.
   uptime_days: z.array(uptimeDaySchema),
 });
 
