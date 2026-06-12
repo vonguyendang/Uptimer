@@ -820,7 +820,7 @@ describe('snapshots/public-homepage', () => {
       now + 100,
     );
 
-    resolveCompute?.(samplePayload(now));
+    (resolveCompute as any)?.(samplePayload(now));
     await refreshPromise;
 
     expect(releaseLease).toHaveBeenCalledWith(db, 'snapshot:homepage:refresh', now + 100);
@@ -863,7 +863,7 @@ describe('snapshots/public-homepage', () => {
       });
 
       await vi.advanceTimersByTimeAsync(45_000);
-      resolveCompute?.(samplePayload(now));
+      (resolveCompute as any)?.(samplePayload(now));
 
       await expect(refreshPromise).resolves.toBe(false);
       expect(writes).toBe(0);

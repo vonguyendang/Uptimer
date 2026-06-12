@@ -1409,7 +1409,7 @@ describe('scheduler/scheduled regression', () => {
     try {
       await runScheduledTick(env, { waitUntil } as unknown as ExecutionContext);
       vi.setSystemTime(delayedTime);
-      rejectServiceFetch?.(new Error('service refresh failed'));
+      (rejectServiceFetch as any)?.(new Error('service refresh failed'));
       await Promise.all(waitUntil.mock.calls.map((call) => call[0] as Promise<unknown>));
 
       expect(refreshPublicHomepageSnapshotIfNeeded).toHaveBeenCalledWith({
@@ -1468,7 +1468,7 @@ describe('scheduler/scheduled regression', () => {
     await vi.advanceTimersByTimeAsync(0);
     expect(resolveCheck).toBeTypeOf('function');
     vi.setSystemTime(delayedTime);
-    resolveCheck?.({
+    (resolveCheck as any)?.({
       status: 'up',
       latencyMs: 21,
       httpStatus: 200,
@@ -1574,7 +1574,7 @@ describe('scheduler/scheduled regression', () => {
     const tickPromise = runScheduledTick(env, { waitUntil } as unknown as ExecutionContext);
 
     await vi.advanceTimersByTimeAsync(90_000);
-    resolveCheck?.({
+    (resolveCheck as any)?.({
       status: 'up',
       latencyMs: 21,
       httpStatus: 200,
@@ -1645,7 +1645,7 @@ describe('scheduler/scheduled regression', () => {
       expect.any(Number),
     );
 
-    resolveCheck?.({
+    (resolveCheck as any)?.({
       status: 'up',
       latencyMs: 21,
       httpStatus: 200,
@@ -1709,7 +1709,7 @@ describe('scheduler/scheduled regression', () => {
     });
 
     await vi.advanceTimersByTimeAsync(76_000);
-    resolveCheck?.({
+    (resolveCheck as any)?.({
       status: 'up',
       latencyMs: 21,
       httpStatus: 200,
