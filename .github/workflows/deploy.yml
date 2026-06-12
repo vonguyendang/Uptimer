@@ -327,7 +327,17 @@ jobs:
         working-directory: apps/worker
         run: |
           set -euo pipefail
-          printf '%s' "$UPTIMER_ADMIN_TOKEN" | pnpm exec wrangler secret put ADMIN_TOKEN --name "$WORKER_NAME" --config "$WRANGLER_CI_CONFIG"
+          for attempt in {1..3}; do
+            if printf '%s' "$UPTIMER_ADMIN_TOKEN" | pnpm exec wrangler secret put ADMIN_TOKEN --name "$WORKER_NAME" --config "$WRANGLER_CI_CONFIG"; then
+              exit 0
+            fi
+            if [[ $attempt -lt 3 ]]; then
+              echo "Attempt $attempt failed, retrying in 5 seconds..."
+              sleep 5
+            fi
+          done
+          echo "::warning::Failed to upsert Worker secret after 3 attempts (non-blocking)"
+          exit 0
 
       - name: Resolve API base + origin (for Vite build + Pages preload)
         shell: bash
