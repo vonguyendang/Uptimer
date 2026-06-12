@@ -17,8 +17,8 @@ import {
   type TelegramChannelConfig,
   type WebhookChannelConfig,
   webhookChannelConfigSchema,
-  telegramChannelConfigSchema,
   emailChannelConfigSchema,
+  type EmailChannelConfig,
 } from '@uptimer/db';
 
 import type { Env } from '../env';
@@ -817,25 +817,26 @@ type NotificationChannelRow = {
 type NotificationChannelInputConfig =
   | CustomWebhookChannelConfig
   | TelegramChannelCreateInput
-  | TelegramChannelPatchInput;
+  | TelegramChannelPatchInput
+  | EmailChannelConfig;
 
 type TelegramApiChannelConfig = Omit<TelegramChannelConfig, 'bot_token_encrypted'> & {
   bot_token_configured: boolean;
   bot_token_source: 'stored' | 'secret_ref';
 };
 
-type NotificationChannelApiConfig = CustomWebhookChannelConfig | TelegramApiChannelConfig;
+type NotificationChannelApiConfig = CustomWebhookChannelConfig | TelegramApiChannelConfig | EmailChannelConfig;
 
 function isTelegramInputConfig(
   config: NotificationChannelInputConfig,
 ): config is TelegramChannelCreateInput | TelegramChannelPatchInput {
-  return config.preset === 'telegram';
+  return 'preset' in config && config.preset === 'telegram';
 }
 
 function isTelegramStoredConfig(
-  config: WebhookChannelConfig | undefined,
+  config: AnyNotificationChannel['config'] | undefined,
 ): config is TelegramChannelConfig {
-  return config?.preset === 'telegram';
+  return config !== undefined && 'preset' in config && config.preset === 'telegram';
 }
 
 async function normalizeNotificationConfigForStorage(
@@ -843,6 +844,10 @@ async function normalizeNotificationConfigForStorage(
   inputConfig: NotificationChannelInputConfig,
   existingConfig?: WebhookChannelConfig,
 ): Promise<WebhookChannelConfig> {
+  if ('provider' in inputConfig) {
+    throw new Error('Email config should not be passed to normalizeNotificationConfigForStorage');
+  }
+
   if (!isTelegramInputConfig(inputConfig)) {
     return inputConfig;
   }
@@ -904,6 +909,7 @@ function sanitizeNotificationConfigForApi(
     bot_token_configured: Boolean(encryptedToken || telegramConfig.bot_token_secret_ref),
     bot_token_source: telegramConfig.bot_token_secret_ref ? 'secret_ref' : 'stored',
   };
+}
 
 function parseChannelConfig(type: string, configJson: string): AnyNotificationChannel['config'] {
   if (type === 'email') {
@@ -921,11 +927,8 @@ function serializeChannelConfig(type: string, config: AnyNotificationChannel['co
     return serializeDbJson(webhookChannelConfigSchema, config, { field: 'config_json' });
   }
 }
-}
 
 function notificationChannelRowToApi(row: NotificationChannelRow) {
-  const config = parseDbJson(webhookChannelConfigSchema, row.config_json, { field: 'config_json' });
-
   return {
     id: row.id,
     name: row.name,

@@ -42,6 +42,7 @@ import type {
   NotificationChannel,
   StatusResponse,
   WebhookChannelConfig,
+  CustomWebhookChannelConfig,
   TelegramChannelConfig,
   EmailChannelConfig,
 } from '../api/types';
@@ -1801,7 +1802,7 @@ export function AdminDashboard() {
                           </td>
                           <td className="px-3 sm:px-4 py-3">
                             <Badge variant="info">
-                              {ch.config_json.preset === 'telegram'
+                              {ch.type === 'webhook' && (ch.config_json as WebhookChannelConfig).preset === 'telegram'
                                 ? t('notification_form.preset_telegram')
                                 : ch.type}
                             </Badge>

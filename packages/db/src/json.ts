@@ -193,13 +193,7 @@ export const webhookChannelConfigSchema = z.union([
 ]);
 export type WebhookChannelConfig = z.infer<typeof webhookChannelConfigSchema>;
 
-export const telegramChannelConfigSchema = z.object({
-  bot_token: z.string().min(1),
-  chat_id: z.string().min(1),
-  message_template: z.string().min(1).max(10000).optional(),
-  enabled_events: z.array(notificationEventTypeSchema).min(1).optional(),
-});
-export type TelegramChannelConfig = z.infer<typeof telegramChannelConfigSchema>;
+
 
 export const emailChannelConfigSchema = z.object({
   provider: z.enum(['resend', 'sendgrid']),

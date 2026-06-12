@@ -442,10 +442,7 @@ const en = {
   'notification_form.type_webhook': 'Webhook',
   'notification_form.type_telegram': 'Telegram',
   'notification_form.type_email': 'Email',
-  'notification_form.telegram_bot_token': 'Bot Token',
-  'notification_form.telegram_bot_token_placeholder': '123456789:ABCdefGhIJKlmNoPQRsTUVwxyZ',
-  'notification_form.telegram_chat_id': 'Chat ID',
-  'notification_form.telegram_chat_id_placeholder': '-100123456789',
+
   'notification_form.email_provider': 'Email Provider',
   'notification_form.email_provider_resend': 'Resend',
   'notification_form.email_provider_sendgrid': 'SendGrid',
@@ -916,10 +913,7 @@ const zhCn: LocaleMessages = {
   'notification_form.type_webhook': 'Webhook',
   'notification_form.type_telegram': 'Telegram',
   'notification_form.type_email': '邮件',
-  'notification_form.telegram_bot_token': '机器人 Token',
-  'notification_form.telegram_bot_token_placeholder': '123456789:ABCdefGhIJKlmNoPQRsTUVwxyZ',
-  'notification_form.telegram_chat_id': '会话 ID (Chat ID)',
-  'notification_form.telegram_chat_id_placeholder': '-100123456789',
+
   'notification_form.email_provider': '邮件服务商',
   'notification_form.email_provider_resend': 'Resend',
   'notification_form.email_provider_sendgrid': 'SendGrid',

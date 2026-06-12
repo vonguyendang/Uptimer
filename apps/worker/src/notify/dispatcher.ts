@@ -1,16 +1,14 @@
 import pLimit from 'p-limit';
 import type {
   WebhookChannelConfig,
-  TelegramChannelConfig,
   EmailChannelConfig,
 } from '@uptimer/db';
 import { dispatchWebhookToChannel } from './webhook';
-import { dispatchTelegramToChannel } from './telegram';
+
 import { dispatchEmailToChannel } from './email';
 
 export type AnyNotificationChannel =
   | { id: number; name: string; type: 'webhook'; config: WebhookChannelConfig }
-  | { id: number; name: string; type: 'telegram'; config: TelegramChannelConfig }
   | { id: number; name: string; type: 'email'; config: EmailChannelConfig };
 
 const DISPATCH_CONCURRENCY = 5;
@@ -33,14 +31,7 @@ export async function dispatchNotificationToChannel(args: {
         eventKey: args.eventKey,
         payload: args.payload,
       });
-    case 'telegram':
-      return dispatchTelegramToChannel({
-        db: args.db,
-        channel: args.channel,
-        eventType: args.eventType,
-        eventKey: args.eventKey,
-        payload: args.payload,
-      });
+
     case 'email':
       return dispatchEmailToChannel({
         db: args.db,

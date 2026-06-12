@@ -7,7 +7,6 @@ import type {
   TelegramChannelConfig,
   TelegramParseMode,
   WebhookChannelConfig,
-  TelegramChannelConfig,
   EmailChannelConfig,
   AnyNotificationChannelConfig,
 } from '../api/types';
@@ -50,9 +49,9 @@ function safeJsonStringify(value: unknown): string {
 }
 
 function isTelegramConfig(
-  config: WebhookChannelConfig | undefined,
+  config: AnyNotificationChannelConfig | undefined,
 ): config is TelegramChannelConfig {
-  return config?.preset === 'telegram';
+  return (config as WebhookChannelConfig)?.preset === 'telegram';
 }
 
 function hasAdvancedTelegramConfig(config: TelegramChannelConfig | undefined): boolean {
@@ -139,7 +138,7 @@ export function NotificationChannelForm({
   const [url, setUrl] = useState(customConfig?.url ?? '');
   const [method, setMethod] = useState<WebhookMethod>(customConfig?.method ?? 'POST');
 
-  const [timeoutMs, setTimeoutMs] = useState<number>(initialConfig?.timeout_ms ?? 5000);
+  const [timeoutMs, setTimeoutMs] = useState<number>((initialConfig as WebhookChannelConfig)?.timeout_ms ?? 5000);
   const [payloadType, setPayloadType] = useState<WebhookPayloadType>(
     customConfig?.payload_type ?? 'json',
   );
@@ -289,58 +288,51 @@ export function NotificationChannelForm({
     e.preventDefault();
     if (!canSubmit) return;
 
-    if (preset === 'telegram') {
-      const config: TelegramChannelConfig = {
-        preset: 'telegram',
-        chat_id: telegramChatId.trim(),
-      };
+    if (type === 'webhook') {
+      if (preset === 'telegram') {
+        const config: TelegramChannelConfig = {
+          preset: 'telegram',
+          chat_id: telegramChatId.trim(),
+        };
 
-      if (telegramUsesSecretRef) {
-        config.bot_token_secret_ref = telegramBotTokenSecretRef.trim();
-      } else if (telegramBotToken.trim()) {
-        config.bot_token = telegramBotToken.trim();
-      }
-      if (showAdvancedTelegram) {
-        if (telegramMessageThreadId.trim()) {
-          const parsed = Number(telegramMessageThreadId);
-          if (Number.isInteger(parsed) && parsed > 0) {
-            config.message_thread_id = parsed;
+        if (telegramUsesSecretRef) {
+          config.bot_token_secret_ref = telegramBotTokenSecretRef.trim();
+        } else if (telegramBotToken.trim()) {
+          config.bot_token = telegramBotToken.trim();
+        }
+        if (showAdvancedTelegram) {
+          if (telegramMessageThreadId.trim()) {
+            const parsed = Number(telegramMessageThreadId);
+            if (Number.isInteger(parsed) && parsed > 0) {
+              config.message_thread_id = parsed;
+            }
+          }
+          if (timeoutMs) {
+            config.timeout_ms = timeoutMs;
+          }
+          if (messageTemplate.trim()) {
+            config.message_template = messageTemplate;
+          }
+          if (enabledEvents.length > 0) {
+            config.enabled_events = enabledEvents;
+          }
+          if (telegramParseMode) {
+            config.parse_mode = telegramParseMode;
+          }
+          if (telegramDisableNotification) {
+            config.disable_notification = true;
+          }
+          if (telegramProtectContent) {
+            config.protect_content = true;
           }
         }
-        if (timeoutMs) {
-          config.timeout_ms = timeoutMs;
-        }
-        if (messageTemplate.trim()) {
-          config.message_template = messageTemplate;
-        }
-        if (enabledEvents.length > 0) {
-          config.enabled_events = enabledEvents;
-        }
-        if (telegramParseMode) {
-          config.parse_mode = telegramParseMode;
-        }
-        if (telegramDisableNotification) {
-          config.disable_notification = true;
-        }
-        if (telegramProtectContent) {
-          config.protect_content = true;
-        }
+
+        onSubmit({ name, type: 'webhook', config_json: config });
+        return;
       }
 
-      onSubmit({ name, type: 'webhook', config_json: config });
-      return;
-    }
-
-    const config: CustomWebhookChannelConfig = {
-      preset: 'custom',
-      url,
-      method,
-      timeout_ms: timeoutMs,
-      payload_type: payloadType,
-    };
-
-    if (type === 'webhook') {
-      const webhookConfig: WebhookChannelConfig = {
+      const config: CustomWebhookChannelConfig = {
+        preset: 'custom',
         url,
         method,
         timeout_ms: timeoutMs,
@@ -348,45 +340,50 @@ export function NotificationChannelForm({
       };
 
       if (headersParse.ok && Object.keys(headersParse.value).length > 0) {
-        webhookConfig.headers = headersParse.value;
+        config.headers = headersParse.value;
       }
 
       if (payloadTemplateParse.ok && payloadTemplateParse.value !== undefined) {
-        webhookConfig.payload_template = payloadTemplateParse.value;
+        config.payload_template = payloadTemplateParse.value;
+      }
+
+      if (messageTemplate.trim()) {
+        config.message_template = messageTemplate;
+      }
+
+      if (enabledEvents.length > 0) {
+        config.enabled_events = enabledEvents;
       }
 
       if (signingEnabled) {
-        webhookConfig.signing = { enabled: true, secret_ref: signingSecretRef };
+        config.signing = { enabled: true, secret_ref: signingSecretRef };
       }
 
-      config = webhookConfig;
-    } else if (type === 'telegram') {
-      config = {
-        bot_token: botToken.trim(),
-        chat_id: chatId.trim(),
-      };
-    } else {
+      onSubmit({ name, type: 'webhook', config_json: config });
+      return;
+    }
+
+    if (type === 'email') {
       const emailConfig: EmailChannelConfig = {
         provider: emailProvider,
         api_key: emailApiKey.trim(),
         from: emailFrom.trim(),
         to: emailTo.trim(),
       };
+
       if (emailSubjectTemplate.trim()) {
         emailConfig.subject_template = emailSubjectTemplate.trim();
       }
-      config = emailConfig;
-    }
+      if (messageTemplate.trim()) {
+        emailConfig.message_template = messageTemplate;
+      }
+      if (enabledEvents.length > 0) {
+        emailConfig.enabled_events = enabledEvents;
+      }
 
-    if (messageTemplate.trim()) {
-      config.message_template = messageTemplate;
+      onSubmit({ name, type: 'email', config_json: emailConfig });
+      return;
     }
-
-    if (enabledEvents.length > 0) {
-      config.enabled_events = enabledEvents;
-    }
-
-    onSubmit({ name, type, config_json: config });
   };
 
   const toggleEnabledEvent = (ev: NotificationEventType) => {
@@ -444,8 +441,9 @@ export function NotificationChannelForm({
 
       {type === 'webhook' && (
         <div className="space-y-5 mt-5">
-        <label className={labelClass}>{t('notification_form.preset')}</label>
-        <div className="grid grid-cols-2 gap-1 rounded-lg border border-slate-200 bg-slate-50 p-1 dark:border-slate-700 dark:bg-slate-800/60">
+          <div>
+            <label className={labelClass}>{t('notification_form.preset')}</label>
+            <div className="grid grid-cols-2 gap-1 rounded-lg border border-slate-200 bg-slate-50 p-1 dark:border-slate-700 dark:bg-slate-800/60">
           {(['custom', 'telegram'] as const).map((item) => {
             const active = preset === item;
             return (
@@ -472,9 +470,9 @@ export function NotificationChannelForm({
             ? t('notification_form.preset_telegram_help')
             : t('notification_form.preset_custom_help')}
         </div>
-      </div>
+          </div>
 
-      {preset === 'custom' ? (
+        {preset === 'custom' ? (
         <>
           <div>
             <label className={labelClass}>{t('notification_form.webhook_url')}</label>
@@ -813,6 +811,67 @@ export function NotificationChannelForm({
               />
             </div>
           )}
+        </div>
+      )}
+        </div>
+      )}
+
+      {type === 'email' && (
+        <div className="space-y-5 mt-5">
+          <div>
+            <label className={labelClass}>{t('notification_form.email_provider')}</label>
+            <select
+              value={emailProvider}
+              onChange={(e) => setEmailProvider(e.target.value as 'resend' | 'sendgrid')}
+              className={selectClass}
+            >
+              <option value="resend">{t('notification_form.email_provider_resend')}</option>
+              <option value="sendgrid">{t('notification_form.email_provider_sendgrid')}</option>
+            </select>
+          </div>
+          <div>
+            <label className={labelClass}>{t('notification_form.email_api_key')}</label>
+            <input
+              type="text"
+              value={emailApiKey}
+              onChange={(e) => setEmailApiKey(e.target.value)}
+              placeholder={t('notification_form.email_api_key_placeholder')}
+              className={inputClass}
+              required
+            />
+          </div>
+          <div>
+            <label className={labelClass}>{t('notification_form.email_from')}</label>
+            <input
+              type="email"
+              value={emailFrom}
+              onChange={(e) => setEmailFrom(e.target.value)}
+              placeholder={t('notification_form.email_from_placeholder')}
+              className={inputClass}
+              required
+            />
+          </div>
+          <div>
+            <label className={labelClass}>{t('notification_form.email_to')}</label>
+            <input
+              type="email"
+              value={emailTo}
+              onChange={(e) => setEmailTo(e.target.value)}
+              placeholder={t('notification_form.email_to_placeholder')}
+              className={inputClass}
+              required
+            />
+          </div>
+          <div>
+            <label className={labelClass}>{t('notification_form.email_subject_template')}</label>
+            <input
+              type="text"
+              value={emailSubjectTemplate}
+              onChange={(e) => setEmailSubjectTemplate(e.target.value)}
+              placeholder={t('notification_form.email_subject_template_placeholder')}
+              className={inputClass}
+            />
+          </div>
         </div>
       )}
 
