@@ -797,7 +797,7 @@ describe('snapshots/public-homepage', () => {
       },
     ]);
 
-    let resolveCompute: ((value: ReturnType<typeof samplePayload>) => void) | null = null;
+    let resolveCompute!: (value: ReturnType<typeof samplePayload>) => void;
     const compute = vi.fn(
       () =>
         new Promise<ReturnType<typeof samplePayload>>((resolve) => {
@@ -821,7 +821,7 @@ describe('snapshots/public-homepage', () => {
       now + 100,
     );
 
-    (resolveCompute as any)?.(samplePayload(now));
+    resolveCompute(samplePayload(now));
     await refreshPromise;
 
     expect(releaseLease).toHaveBeenCalledWith(db, 'snapshot:homepage:refresh', now + 100);
@@ -845,7 +845,7 @@ describe('snapshots/public-homepage', () => {
       },
     ]);
 
-    let resolveCompute: ((value: ReturnType<typeof samplePayload>) => void) | null = null;
+    let resolveCompute!: (value: ReturnType<typeof samplePayload>) => void;
     const compute = vi.fn(
       () =>
         new Promise<ReturnType<typeof samplePayload>>((resolve) => {
@@ -864,7 +864,7 @@ describe('snapshots/public-homepage', () => {
       });
 
       await vi.advanceTimersByTimeAsync(45_000);
-      (resolveCompute as any)?.(samplePayload(now));
+      resolveCompute(samplePayload(now));
 
       await expect(refreshPromise).resolves.toBe(false);
       expect(writes).toBe(0);

@@ -1394,7 +1394,7 @@ describe('scheduler/scheduled regression', () => {
     env.ADMIN_TOKEN = 'test-admin-token';
     const delayedTime = new Date('2026-02-17T00:02:42.000Z');
     const delayedNow = Math.floor(delayedTime.valueOf() / 1000);
-    let rejectServiceFetch: ((reason?: unknown) => void) | null = null;
+    let rejectServiceFetch!: (reason?: unknown) => void;
     env.SELF = {
       fetch: vi.fn(
         async () =>
@@ -1409,7 +1409,7 @@ describe('scheduler/scheduled regression', () => {
     try {
       await runScheduledTick(env, { waitUntil } as unknown as ExecutionContext);
       vi.setSystemTime(delayedTime);
-      (rejectServiceFetch as any)?.(new Error('service refresh failed'));
+      rejectServiceFetch(new Error('service refresh failed'));
       await Promise.all(waitUntil.mock.calls.map((call) => call[0] as Promise<unknown>));
 
       expect(refreshPublicHomepageSnapshotIfNeeded).toHaveBeenCalledWith({
@@ -1424,7 +1424,7 @@ describe('scheduler/scheduled regression', () => {
   });
 
   it('uses the current wall clock when writing runtime snapshots after a delayed monitor batch', async () => {
-    let resolveCheck: ((value: { status: string; latencyMs: number; httpStatus: number; error: null; attempts: number }) => void) | null = null;
+    let resolveCheck!: (value: { status: string; latencyMs: number; httpStatus: number; error: null; attempts: number }) => void;
 
     vi.mocked(runHttpCheck).mockImplementation(
       () =>
@@ -1468,7 +1468,7 @@ describe('scheduler/scheduled regression', () => {
     await vi.advanceTimersByTimeAsync(0);
     expect(resolveCheck).toBeTypeOf('function');
     vi.setSystemTime(delayedTime);
-    (resolveCheck as any)?.({
+    resolveCheck({
       status: 'up',
       latencyMs: 21,
       httpStatus: 200,
@@ -1529,7 +1529,7 @@ describe('scheduler/scheduled regression', () => {
 
   it('fails closed when the scheduler lease is lost before persistence', async () => {
     let persistedWrites = 0;
-    let resolveCheck: ((value: { status: string; latencyMs: number; httpStatus: number; error: null; attempts: number }) => void) | null = null;
+    let resolveCheck!: (value: { status: string; latencyMs: number; httpStatus: number; error: null; attempts: number }) => void;
 
     vi.mocked(runHttpCheck).mockImplementation(
       () =>
@@ -1574,7 +1574,7 @@ describe('scheduler/scheduled regression', () => {
     const tickPromise = runScheduledTick(env, { waitUntil } as unknown as ExecutionContext);
 
     await vi.advanceTimersByTimeAsync(90_000);
-    (resolveCheck as any)?.({
+    resolveCheck({
       status: 'up',
       latencyMs: 21,
       httpStatus: 200,
@@ -1588,7 +1588,7 @@ describe('scheduler/scheduled regression', () => {
   });
 
   it('keeps fixed claimed monitor execution leases during batches within the lease window', async () => {
-    let resolveCheck: ((value: { status: string; latencyMs: number; httpStatus: number; error: null; attempts: number }) => void) | null = null;
+    let resolveCheck!: (value: { status: string; latencyMs: number; httpStatus: number; error: null; attempts: number }) => void;
 
     vi.mocked(runHttpCheck).mockImplementation(
       () =>
@@ -1645,7 +1645,7 @@ describe('scheduler/scheduled regression', () => {
       expect.any(Number),
     );
 
-    (resolveCheck as any)?.({
+    resolveCheck({
       status: 'up',
       latencyMs: 21,
       httpStatus: 200,
@@ -1656,7 +1656,7 @@ describe('scheduler/scheduled regression', () => {
   });
 
   it('fails closed when a fixed claimed monitor execution lease expires before persistence', async () => {
-    let resolveCheck: ((value: { status: string; latencyMs: number; httpStatus: number; error: null; attempts: number }) => void) | null = null;
+    let resolveCheck!: (value: { status: string; latencyMs: number; httpStatus: number; error: null; attempts: number }) => void;
     let persistedWrites = 0;
 
     vi.mocked(runHttpCheck).mockImplementation(
@@ -1709,7 +1709,7 @@ describe('scheduler/scheduled regression', () => {
     });
 
     await vi.advanceTimersByTimeAsync(76_000);
-    (resolveCheck as any)?.({
+    resolveCheck({
       status: 'up',
       latencyMs: 21,
       httpStatus: 200,
