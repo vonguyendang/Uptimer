@@ -1,14 +1,15 @@
 import type { Env } from '../env';
 
+import {
+  RETENTION_DELETE_BATCH_SIZE,
+  RETENTION_MAX_BATCHES_PER_RUN,
+} from '@uptimer/db';
+
 import { readSettings } from '../settings';
 import { acquireLease } from './lock';
 
 const LOCK_NAME = 'retention:check_results';
 const LOCK_LEASE_SECONDS = 10 * 60;
-
-// Keep delete batches bounded to avoid long-running SQLite statements.
-const DELETE_BATCH_SIZE = 5_000;
-const MAX_BATCHES = 40; // 200k rows max per run
 
 export async function runRetention(env: Env, controller: ScheduledController): Promise<void> {
   const now = Math.floor((controller.scheduledTime ?? Date.now()) / 1000);
@@ -24,7 +25,9 @@ export async function runRetention(env: Env, controller: ScheduledController): P
 
   let totalDeleted = 0;
 
-  for (let i = 0; i < MAX_BATCHES; i++) {
+  let batchesRun = 0;
+  for (let i = 0; i < RETENTION_MAX_BATCHES_PER_RUN; i++) {
+    batchesRun++;
     const r = await env.DB.prepare(
       `
         DELETE FROM check_results
@@ -37,14 +40,24 @@ export async function runRetention(env: Env, controller: ScheduledController): P
         )
       `,
     )
-      .bind(cutoff, DELETE_BATCH_SIZE)
+      .bind(cutoff, RETENTION_DELETE_BATCH_SIZE)
       .run();
 
     const deleted = r.meta.changes ?? 0;
     totalDeleted += deleted;
 
-    if (deleted < DELETE_BATCH_SIZE) break;
+    if (deleted < RETENTION_DELETE_BATCH_SIZE) break;
   }
 
-  console.log(`retention: deleted=${totalDeleted} cutoff=${cutoff} days=${retentionDays}`);
+  let backlogRemaining = 0;
+  if (batchesRun === RETENTION_MAX_BATCHES_PER_RUN) {
+    const backlogResult = await env.DB.prepare(
+      `SELECT count(*) as count FROM check_results WHERE checked_at < ?1`
+    )
+      .bind(cutoff)
+      .first<{ count: number }>();
+    backlogRemaining = backlogResult?.count ?? 0;
+  }
+
+  console.log(`retention: deleted=${totalDeleted} batches=${batchesRun} backlog_remaining=${backlogRemaining} cutoff=${cutoff} days=${retentionDays}`);
 }

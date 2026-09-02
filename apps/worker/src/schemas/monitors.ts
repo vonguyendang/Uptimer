@@ -41,6 +41,8 @@ export const createMonitorInputSchema = z
 
     interval_sec: z.number().int().min(60).optional(),
     timeout_ms: z.number().int().min(1000).optional(),
+    retain_up_check_results: z.boolean().optional(),
+    up_result_sample_interval_sec: z.number().int().min(60).max(86400).optional(),
 
     http_method: z.enum(['GET', 'POST', 'PUT', 'PATCH', 'DELETE', 'HEAD']).optional(),
     http_headers_json: httpHeadersJsonSchema.optional(),
@@ -107,6 +109,8 @@ export const patchMonitorInputSchema = z
 
     interval_sec: z.number().int().min(60).optional(),
     timeout_ms: z.number().int().min(1000).optional(),
+    retain_up_check_results: z.boolean().optional(),
+    up_result_sample_interval_sec: z.number().int().min(60).max(86400).optional(),
 
     http_method: z.enum(['GET', 'POST', 'PUT', 'PATCH', 'DELETE', 'HEAD']).optional(),
     http_headers_json: httpHeadersJsonSchema.nullable().optional(),

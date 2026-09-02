@@ -352,6 +352,8 @@ export interface AdminMonitor {
   show_on_status_page: boolean;
   interval_sec: number;
   timeout_ms: number;
+  retain_up_check_results: boolean;
+  up_result_sample_interval_sec: number;
   http_method: string | null;
   http_headers_json: Record<string, string> | null;
   http_body: string | null;
@@ -383,6 +385,8 @@ export interface CreateMonitorInput {
   show_on_status_page?: boolean;
   interval_sec?: number;
   timeout_ms?: number;
+  retain_up_check_results?: boolean;
+  up_result_sample_interval_sec?: number;
   http_method?: string;
   http_headers_json?: Record<string, string>;
   http_body?: string;
@@ -405,6 +409,8 @@ export interface PatchMonitorInput {
   show_on_status_page?: boolean;
   interval_sec?: number;
   timeout_ms?: number;
+  retain_up_check_results?: boolean;
+  up_result_sample_interval_sec?: number;
   http_method?: string;
   http_headers_json?: Record<string, string> | null;
   http_body?: string | null;

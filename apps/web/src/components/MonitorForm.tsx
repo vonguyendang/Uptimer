@@ -16,6 +16,12 @@ import {
   SELECT_CLASS,
   TEXTAREA_CLASS,
 } from './ui';
+import {
+  DEFAULT_MONITOR_INTERVAL_SEC,
+  DEFAULT_MONITOR_TIMEOUT_MS,
+  DEFAULT_RETAIN_UP_CHECK_RESULTS,
+  DEFAULT_UP_RESULT_SAMPLE_INTERVAL_SEC,
+} from '../constants';
 
 type HttpMethod = 'GET' | 'POST' | 'PUT' | 'PATCH' | 'DELETE' | 'HEAD';
 
@@ -247,8 +253,10 @@ export function MonitorForm(props: CreateProps | EditProps) {
   const [type, setType] = useState<MonitorType>(monitor?.type ?? 'http');
   const [target, setTarget] = useState(monitor?.target ?? '');
   const [displayUrl, setDisplayUrl] = useState(monitor?.display_url ?? '');
-  const [intervalSec, setIntervalSec] = useState(monitor?.interval_sec ?? 60);
-  const [timeoutMs, setTimeoutMs] = useState(monitor?.timeout_ms ?? 10000);
+  const [intervalSec, setIntervalSec] = useState(monitor?.interval_sec ?? DEFAULT_MONITOR_INTERVAL_SEC);
+  const [timeoutMs, setTimeoutMs] = useState(monitor?.timeout_ms ?? DEFAULT_MONITOR_TIMEOUT_MS);
+  const [retainUpCheckResults, setRetainUpCheckResults] = useState(monitor?.retain_up_check_results ?? DEFAULT_RETAIN_UP_CHECK_RESULTS);
+  const [upResultSampleIntervalSec, setUpResultSampleIntervalSec] = useState(monitor?.up_result_sample_interval_sec ?? DEFAULT_UP_RESULT_SAMPLE_INTERVAL_SEC);
 
   const [httpMethod, setHttpMethod] = useState<HttpMethod>(
     toHttpMethod(monitor?.http_method ?? 'GET'),
@@ -339,6 +347,8 @@ export function MonitorForm(props: CreateProps | EditProps) {
       show_on_status_page: showOnStatusPage,
       interval_sec: intervalSec,
       timeout_ms: timeoutMs,
+      retain_up_check_results: retainUpCheckResults,
+      up_result_sample_interval_sec: upResultSampleIntervalSec,
       display_url: displayUrlParse.ok ? displayUrlParse.value : null,
     };
 
@@ -614,6 +624,31 @@ export function MonitorForm(props: CreateProps | EditProps) {
         </div>
       </div>
 
+      <div className="grid grid-cols-1 sm:grid-cols-2 gap-4 mt-4">
+        <div className="flex flex-col justify-center">
+          <label className="flex items-center gap-2 text-sm font-medium text-slate-700 dark:text-slate-300 cursor-pointer">
+            <input
+              type="checkbox"
+              checked={retainUpCheckResults}
+              onChange={(e) => setRetainUpCheckResults(e.target.checked)}
+              className="rounded border-slate-300 text-blue-600 focus:ring-blue-500 dark:border-slate-600 dark:bg-slate-700 dark:ring-offset-slate-800"
+            />
+            {t('monitor_form.retain_up_check_results')}
+          </label>
+        </div>
+        {retainUpCheckResults && (
+          <div>
+            <label className={labelClass}>{t('monitor_form.up_result_sample_interval_sec')}</label>
+            <input
+              type="number"
+              value={upResultSampleIntervalSec}
+              onChange={(e) => setUpResultSampleIntervalSec(Number(e.target.value))}
+              min={60}
+              className={inputClass}
+            />
+          </div>
+        )}
+      </div>
       {type === 'http' && (
         <div className="border-t border-slate-200 dark:border-slate-700 pt-4">
           <label className="flex items-center gap-2 text-sm text-slate-700 dark:text-slate-300">

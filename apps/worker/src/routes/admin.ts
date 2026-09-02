@@ -3,6 +3,10 @@ import { z } from 'zod';
 
 import {
   asc,
+  DEFAULT_MONITOR_INTERVAL_SEC,
+  DEFAULT_MONITOR_TIMEOUT_MS,
+  DEFAULT_RETAIN_UP_CHECK_RESULTS,
+  DEFAULT_UP_RESULT_SAMPLE_INTERVAL_SEC,
   eq,
   type CustomWebhookChannelConfig,
   expectedStatusJsonSchema,
@@ -268,6 +272,8 @@ function monitorRowToApi(
     display_url: row.displayUrl,
     interval_sec: row.intervalSec,
     timeout_ms: row.timeoutMs,
+    retain_up_check_results: row.retainUpCheckResults === 1,
+    up_result_sample_interval_sec: row.upResultSampleIntervalSec,
     http_method: row.httpMethod,
     http_headers_json: parseDbJsonNullable(httpHeadersJsonSchema, row.httpHeadersJson, {
       field: 'http_headers_json',
@@ -438,8 +444,10 @@ adminRoutes.post('/monitors', async (c) => {
       type: input.type,
       target: input.target,
       displayUrl: input.display_url ?? null,
-      intervalSec: input.interval_sec ?? 60,
-      timeoutMs: input.timeout_ms ?? 10000,
+      intervalSec: input.interval_sec ?? DEFAULT_MONITOR_INTERVAL_SEC,
+      timeoutMs: input.timeout_ms ?? DEFAULT_MONITOR_TIMEOUT_MS,
+      retainUpCheckResults: (input.retain_up_check_results ?? DEFAULT_RETAIN_UP_CHECK_RESULTS) ? 1 : 0,
+      upResultSampleIntervalSec: input.up_result_sample_interval_sec ?? DEFAULT_UP_RESULT_SAMPLE_INTERVAL_SEC,
 
       httpMethod: input.type === 'http' ? (input.http_method ?? null) : null,
       httpHeadersJson:
@@ -586,6 +594,8 @@ adminRoutes.patch('/monitors/:id', async (c) => {
       displayUrl: input.display_url !== undefined ? input.display_url : existing.displayUrl,
       intervalSec: input.interval_sec ?? existing.intervalSec,
       timeoutMs: input.timeout_ms ?? existing.timeoutMs,
+      retainUpCheckResults: input.retain_up_check_results !== undefined ? (input.retain_up_check_results ? 1 : 0) : existing.retainUpCheckResults,
+      upResultSampleIntervalSec: input.up_result_sample_interval_sec ?? existing.upResultSampleIntervalSec,
       httpMethod: input.http_method !== undefined ? input.http_method : existing.httpMethod,
       httpHeadersJson:
         input.http_headers_json !== undefined

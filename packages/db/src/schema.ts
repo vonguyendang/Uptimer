@@ -28,6 +28,8 @@ export const monitors = sqliteTable(
 
     intervalSec: integer('interval_sec').notNull().default(60),
     timeoutMs: integer('timeout_ms').notNull().default(10000),
+    retainUpCheckResults: integer('retain_up_check_results').notNull().default(1),
+    upResultSampleIntervalSec: integer('up_result_sample_interval_sec').notNull().default(300),
 
     httpMethod: text('http_method'),
     httpHeadersJson: text('http_headers_json'),
@@ -70,6 +72,7 @@ export const monitorState = sqliteTable('monitor_state', {
   lastError: text('last_error'),
   consecutiveFailures: integer('consecutive_failures').notNull().default(0),
   consecutiveSuccesses: integer('consecutive_successes').notNull().default(0),
+  lastSampledAt: integer('last_sampled_at'),
 });
 
 export const checkResults = sqliteTable(

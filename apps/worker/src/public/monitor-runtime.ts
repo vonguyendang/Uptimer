@@ -1499,7 +1499,12 @@ export async function refreshPublicMonitorRuntimeSnapshot(opts: {
   }
 
   const next = applyMonitorRuntimeUpdates(snapshot, opts.now, opts.updates);
-  await opts.beforeWrite?.();
-  await writePublicMonitorRuntimeSnapshot(opts.db, next, opts.now);
+  const isChanged = JSON.stringify(snapshot.monitors) !== JSON.stringify(next.monitors);
+  
+  if (isChanged) {
+    await opts.beforeWrite?.();
+    await writePublicMonitorRuntimeSnapshot(opts.db, next, opts.now);
+  }
+  
   return next;
 }

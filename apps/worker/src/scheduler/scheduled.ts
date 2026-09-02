@@ -6,6 +6,10 @@ import {
   parseDbJsonNullable,
 } from '@uptimer/db/json';
 import type { HttpResponseMatchMode, MonitorStatus } from '@uptimer/db/schema';
+import {
+  DEFAULT_RETAIN_UP_CHECK_RESULTS,
+  DEFAULT_UP_RESULT_SAMPLE_INTERVAL_SEC,
+} from '@uptimer/db';
 
 import type { Env } from '../env';
 import { runInternalHomepageRefreshCore } from '../internal/homepage-refresh-core';
@@ -99,6 +103,8 @@ type MonitorBatchStats = {
   assertionCount: number;
   downCount: number;
   unknownCount: number;
+  sampledUpChecksSkipped?: number;
+  monitorStateUpsertsSkipped?: number;
 };
 
 type MonitorBatchExecutionResult = {
@@ -671,6 +677,8 @@ function createEmptyMonitorBatchStats(): MonitorBatchStats {
     assertionCount: 0,
     downCount: 0,
     unknownCount: 0,
+    sampledUpChecksSkipped: 0,
+    monitorStateUpsertsSkipped: 0,
   };
 }
 
@@ -813,6 +821,8 @@ export type DueMonitorRow = {
   display_url: string | null;
   interval_sec: number;
   created_at: number;
+  retain_up_check_results: number;
+  up_result_sample_interval_sec: number;
   timeout_ms: number;
   http_method: string | null;
   http_headers_json: string | null;
@@ -827,6 +837,7 @@ export type DueMonitorRow = {
   state_last_error: string | null;
   last_checked_at: number | null;
   last_changed_at: number | null;
+  last_sampled_at: number | null;
   consecutive_failures: number | null;
   consecutive_successes: number | null;
 };
@@ -888,6 +899,8 @@ const LIST_DUE_MONITORS_SQL = `
     m.display_url,
     m.interval_sec,
     m.created_at,
+    m.retain_up_check_results,
+    m.up_result_sample_interval_sec,
     m.timeout_ms,
     m.http_method,
     m.http_headers_json,
@@ -902,6 +915,7 @@ const LIST_DUE_MONITORS_SQL = `
     s.last_error AS state_last_error,
     s.last_checked_at,
     s.last_changed_at,
+    s.last_sampled_at,
     s.consecutive_failures,
     s.consecutive_successes
   FROM monitors m
@@ -1031,6 +1045,8 @@ export async function listMonitorRowsByIds(
         m.display_url,
         m.interval_sec,
         m.created_at,
+        m.retain_up_check_results,
+        m.up_result_sample_interval_sec,
         m.timeout_ms,
         m.http_method,
         m.http_headers_json,
@@ -1045,6 +1061,7 @@ export async function listMonitorRowsByIds(
         s.last_error AS state_last_error,
         s.last_checked_at,
         s.last_changed_at,
+        s.last_sampled_at,
         s.consecutive_failures,
         s.consecutive_successes
       FROM monitors m
@@ -1324,6 +1341,8 @@ function buildNumberedTuplePlaceholders(rowCount: number, bindingsPerRow: number
   return tuples.join(', ');
 }
 
+const STATE_HEARTBEAT_INTERVAL_SEC = DEFAULT_UP_RESULT_SAMPLE_INTERVAL_SEC;
+
 function getInsertCheckResultStatement(
   db: D1Database,
   templates: PersistStatementTemplates,
@@ -1369,8 +1388,9 @@ function getUpsertMonitorStateStatement(
       last_latency_ms,
       last_error,
       consecutive_failures,
-      consecutive_successes
-    ) VALUES ${buildNumberedTuplePlaceholders(rowCount, MONITOR_STATE_BINDINGS_PER_ROW)}
+      consecutive_successes,
+      last_sampled_at
+    ) VALUES ${buildNumberedTuplePlaceholders(rowCount, 10)}
     ON CONFLICT(monitor_id) DO UPDATE SET
       status = excluded.status,
       last_checked_at = excluded.last_checked_at,
@@ -1378,7 +1398,8 @@ function getUpsertMonitorStateStatement(
       last_latency_ms = excluded.last_latency_ms,
       last_error = excluded.last_error,
       consecutive_failures = excluded.consecutive_failures,
-      consecutive_successes = excluded.consecutive_successes
+      consecutive_successes = excluded.consecutive_successes,
+      last_sampled_at = excluded.last_sampled_at
     WHERE monitor_state.last_checked_at IS NULL
       OR excluded.last_checked_at >= monitor_state.last_checked_at
   `);
@@ -1401,7 +1422,7 @@ function toCheckResultBindings(completed: CompletedDueMonitor): unknown[] {
   ];
 }
 
-function toMonitorStateBindings(completed: CompletedDueMonitor): unknown[] {
+function toMonitorStateBindings(completed: CompletedDueMonitor, sampled: boolean): unknown[] {
   const { row, checkedAt, outcome, next, stateLastError } = completed;
   return [
     row.id,
@@ -1412,6 +1433,7 @@ function toMonitorStateBindings(completed: CompletedDueMonitor): unknown[] {
     stateLastError,
     next.consecutiveFailures,
     next.consecutiveSuccesses,
+    sampled ? checkedAt : row.last_sampled_at,
   ];
 }
 
@@ -1495,6 +1517,8 @@ function summarizeCompletedMonitors(
     assertionCount,
     downCount,
     unknownCount,
+    sampledUpChecksSkipped: 0,
+    monitorStateUpsertsSkipped: 0,
   };
 }
 
@@ -1610,6 +1634,10 @@ async function runDueMonitor(
 async function persistCompletedMonitors(
   db: D1Database,
   completed: CompletedDueMonitor[],
+  diagnostics?: {
+    sampledUpChecksSkipped?: number;
+    monitorStateUpsertsSkipped?: number;
+  }
 ): Promise<void> {
   const cached = persistStatementTemplatesByDb.get(db);
   const templates = cached ?? {
@@ -1627,15 +1655,51 @@ async function persistCompletedMonitors(
     const chunk = completed.slice(i, i + PERSIST_BATCH_SIZE);
     const statements: D1PreparedStatement[] = [];
 
-    if (chunk.length > 0) {
-      const checkResultBindings = chunk.flatMap((monitor) => toCheckResultBindings(monitor));
-      statements.push(
-        getInsertCheckResultStatement(db, templates, chunk.length).bind(...checkResultBindings),
-      );
+    const checkResultsToInsert: CompletedDueMonitor[] = [];
+    const monitorStatesToUpsert: { completed: CompletedDueMonitor; sampled: boolean }[] = [];
 
-      const monitorStateBindings = chunk.flatMap((monitor) => toMonitorStateBindings(monitor));
+    for (const monitor of chunk) {
+      const { row, checkedAt, outcome, prevStatus, next, stateLastError } = monitor;
+      
+      const retainUp = row.retain_up_check_results != null ? row.retain_up_check_results === 1 : DEFAULT_RETAIN_UP_CHECK_RESULTS;
+      const sampleInterval = row.up_result_sample_interval_sec || DEFAULT_UP_RESULT_SAMPLE_INTERVAL_SEC;
+      const lastSampledAt = row.last_sampled_at;
+
+      const isSampleIntervalReached = lastSampledAt === null || (checkedAt - lastSampledAt) >= sampleInterval;
+      const shouldPersistUpSample = retainUp && isSampleIntervalReached;
+      
+      const hasStatusChanged = prevStatus !== next.status;
+      const hasErrorChanged = stateLastError !== row.state_last_error;
+      const isNotUp = outcome.status !== 'up';
+
+      const shouldInsertCheckResult = isNotUp || hasStatusChanged || hasErrorChanged || shouldPersistUpSample;
+      if (shouldInsertCheckResult) {
+        checkResultsToInsert.push(monitor);
+      } else if (diagnostics) {
+        diagnostics.sampledUpChecksSkipped = (diagnostics.sampledUpChecksSkipped ?? 0) + 1;
+      }
+
+      const isHeartbeatReached = row.last_checked_at === null || (checkedAt - row.last_checked_at) >= STATE_HEARTBEAT_INTERVAL_SEC;
+      const shouldUpsertMonitorState = hasStatusChanged || hasErrorChanged || shouldPersistUpSample || isHeartbeatReached;
+
+      if (shouldUpsertMonitorState) {
+        monitorStatesToUpsert.push({ completed: monitor, sampled: shouldPersistUpSample });
+      } else if (diagnostics) {
+        diagnostics.monitorStateUpsertsSkipped = (diagnostics.monitorStateUpsertsSkipped ?? 0) + 1;
+      }
+    }
+
+    if (checkResultsToInsert.length > 0) {
+      const checkResultBindings = checkResultsToInsert.flatMap((monitor) => toCheckResultBindings(monitor));
       statements.push(
-        getUpsertMonitorStateStatement(db, templates, chunk.length).bind(...monitorStateBindings),
+        getInsertCheckResultStatement(db, templates, checkResultsToInsert.length).bind(...checkResultBindings),
+      );
+    }
+
+    if (monitorStatesToUpsert.length > 0) {
+      const monitorStateBindings = monitorStatesToUpsert.flatMap(({ completed, sampled }) => toMonitorStateBindings(completed, sampled));
+      statements.push(
+        getUpsertMonitorStateStatement(db, templates, monitorStatesToUpsert.length).bind(...monitorStateBindings),
       );
     }
 
@@ -1693,6 +1757,7 @@ export async function runPersistedMonitorBatch(opts: {
     .map((result) => result.value);
 
   let persistDurMs = 0;
+  const diagnosticsObj: { sampledUpChecksSkipped?: number; monitorStateUpsertsSkipped?: number } = {};
   if (completed.length > 0) {
     if (opts.beforePersist) {
       if (opts.trace) {
@@ -1705,10 +1770,10 @@ export async function runPersistedMonitorBatch(opts: {
     if (opts.trace) {
       await opts.trace.timeAsync(
         'batch_persist_completed',
-        async () => await persistCompletedMonitors(opts.db, completed),
+        async () => await persistCompletedMonitors(opts.db, completed, diagnosticsObj),
       );
     } else {
-      await persistCompletedMonitors(opts.db, completed);
+      await persistCompletedMonitors(opts.db, completed, diagnosticsObj);
     }
     persistDurMs = performance.now() - persistStart;
 
@@ -1731,9 +1796,13 @@ export async function runPersistedMonitorBatch(opts: {
     ? opts.trace.time('batch_runtime_updates', () => completed.map(toMonitorRuntimeUpdate))
     : completed.map(toMonitorRuntimeUpdate);
 
+  const stats = summarizeCompletedMonitors(completed, rejectedCount);
+  stats.sampledUpChecksSkipped = diagnosticsObj.sampledUpChecksSkipped ?? 0;
+  stats.monitorStateUpsertsSkipped = diagnosticsObj.monitorStateUpsertsSkipped ?? 0;
+
   return {
     runtimeUpdates,
-    stats: summarizeCompletedMonitors(completed, rejectedCount),
+    stats,
     checksDurMs,
     persistDurMs,
   };
@@ -1748,6 +1817,8 @@ function mergeBatchStats(target: MonitorBatchStats, source: MonitorBatchStats): 
   target.assertionCount += source.assertionCount;
   target.downCount += source.downCount;
   target.unknownCount += source.unknownCount;
+  target.sampledUpChecksSkipped = (target.sampledUpChecksSkipped ?? 0) + (source.sampledUpChecksSkipped ?? 0);
+  target.monitorStateUpsertsSkipped = (target.monitorStateUpsertsSkipped ?? 0) + (source.monitorStateUpsertsSkipped ?? 0);
 }
 
 function chunkDueMonitorRows(rows: DueMonitorRow[], size: number): DueMonitorRow[][] {
@@ -2056,11 +2127,11 @@ export async function runScheduledTick(env: Env, ctx: ExecutionContext): Promise
 
     if (aggregateStats.rejectedCount > 0) {
       console.error(
-        `scheduled: ${aggregateStats.rejectedCount}/${due.length} monitors failed at ${checkedAt} attempts=${aggregateStats.attemptTotal} http=${aggregateStats.httpCount} tcp=${aggregateStats.tcpCount} assertions=${aggregateStats.assertionCount} down=${aggregateStats.downCount} unknown=${aggregateStats.unknownCount} batch_mode=${batchMode} batch_count=${batchCount} dur_setup=${setupDurMs.toFixed(2)} dur_checks=${checksDurMs.toFixed(2)} dur_persist=${persistDurMs.toFixed(2)} dur_batch=${batchWallDurMs.toFixed(2)} dur_runtime=${runtimeSnapshotDurMs.toFixed(2)} dur_total=${(performance.now() - totalStart).toFixed(2)}`,
+        `scheduled: ${aggregateStats.rejectedCount}/${due.length} monitors failed at ${checkedAt} attempts=${aggregateStats.attemptTotal} http=${aggregateStats.httpCount} tcp=${aggregateStats.tcpCount} assertions=${aggregateStats.assertionCount} down=${aggregateStats.downCount} unknown=${aggregateStats.unknownCount} check_results_skipped=${aggregateStats.sampledUpChecksSkipped ?? 0} monitor_state_upserts_skipped=${aggregateStats.monitorStateUpsertsSkipped ?? 0} batch_mode=${batchMode} batch_count=${batchCount} dur_setup=${setupDurMs.toFixed(2)} dur_checks=${checksDurMs.toFixed(2)} dur_persist=${persistDurMs.toFixed(2)} dur_batch=${batchWallDurMs.toFixed(2)} dur_runtime=${runtimeSnapshotDurMs.toFixed(2)} dur_total=${(performance.now() - totalStart).toFixed(2)}`,
       );
     } else if (shouldLogScheduledRefresh(env)) {
       console.log(
-        `scheduled: processed ${aggregateStats.processedCount} monitors at ${checkedAt} attempts=${aggregateStats.attemptTotal} http=${aggregateStats.httpCount} tcp=${aggregateStats.tcpCount} assertions=${aggregateStats.assertionCount} down=${aggregateStats.downCount} unknown=${aggregateStats.unknownCount} batch_mode=${batchMode} batch_count=${batchCount} dur_setup=${setupDurMs.toFixed(2)} dur_checks=${checksDurMs.toFixed(2)} dur_persist=${persistDurMs.toFixed(2)} dur_batch=${batchWallDurMs.toFixed(2)} dur_runtime=${runtimeSnapshotDurMs.toFixed(2)} dur_total=${(performance.now() - totalStart).toFixed(2)}`,
+        `scheduled: processed ${aggregateStats.processedCount} monitors at ${checkedAt} attempts=${aggregateStats.attemptTotal} http=${aggregateStats.httpCount} tcp=${aggregateStats.tcpCount} assertions=${aggregateStats.assertionCount} down=${aggregateStats.downCount} unknown=${aggregateStats.unknownCount} check_results_skipped=${aggregateStats.sampledUpChecksSkipped ?? 0} monitor_state_upserts_skipped=${aggregateStats.monitorStateUpsertsSkipped ?? 0} batch_mode=${batchMode} batch_count=${batchCount} dur_setup=${setupDurMs.toFixed(2)} dur_checks=${checksDurMs.toFixed(2)} dur_persist=${persistDurMs.toFixed(2)} dur_batch=${batchWallDurMs.toFixed(2)} dur_runtime=${runtimeSnapshotDurMs.toFixed(2)} dur_total=${(performance.now() - totalStart).toFixed(2)}`,
       );
     }
 
