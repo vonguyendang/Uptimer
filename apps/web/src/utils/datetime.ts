@@ -10,6 +10,13 @@ export function getBrowserTimeZone(): TimeZone | undefined {
   }
 }
 
+export function utcDayStart(tsSec: number): number {
+  if (!Number.isFinite(tsSec)) return 0;
+  const d = new Date(tsSec * 1000);
+  if (Number.isNaN(d.getTime())) return 0;
+  return Math.floor(Date.UTC(d.getUTCFullYear(), d.getUTCMonth(), d.getUTCDate()) / 1000);
+}
+
 function resolveLocale(locale?: Locale): Locale | undefined {
   if (locale && locale.trim().length > 0) return locale;
   if (typeof document === 'undefined') return undefined;

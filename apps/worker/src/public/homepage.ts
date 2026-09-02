@@ -1019,7 +1019,7 @@ async function buildHomepageMonitorCardsFromRows(
             .then((resultRows) => resultRows ?? []),
       );
 
-  const todayByMonitorIdPromise: Promise<Map<number, UptimeWindowTotals>> = !needsToday
+    const todayByMonitorIdPromise: Promise<Map<number, UptimeWindowTotals>> = !needsToday
     ? Promise.resolve(new Map<number, UptimeWindowTotals>())
     : runtimeById
       ? Promise.resolve(

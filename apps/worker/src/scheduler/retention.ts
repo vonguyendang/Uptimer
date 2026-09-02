@@ -49,15 +49,19 @@ export async function runRetention(env: Env, controller: ScheduledController): P
     if (deleted < RETENTION_DELETE_BATCH_SIZE) break;
   }
 
-  let backlogRemaining = 0;
+  let backlogRemaining: string | number = 0;
   if (batchesRun === RETENTION_MAX_BATCHES_PER_RUN) {
-    const backlogResult = await env.DB.prepare(
-      `SELECT count(*) as count FROM check_results WHERE checked_at < ?1`
-    )
-      .bind(cutoff)
-      .first<{ count: number }>();
-    backlogRemaining = backlogResult?.count ?? 0;
+    backlogRemaining = 'unknown (exceeded batch limit)';
   }
 
-  console.log(`retention: deleted=${totalDeleted} batches=${batchesRun} backlog_remaining=${backlogRemaining} cutoff=${cutoff} days=${retentionDays}`);
+  // Delete historical daily rollups older than 90 days to save space
+  const rollupsCutoff = now - 90 * 86400;
+  const rollupsResult = await env.DB.prepare(
+    `DELETE FROM monitor_daily_rollups WHERE day_start_at < ?1`
+  )
+    .bind(rollupsCutoff)
+    .run();
+  const rollupsDeleted = rollupsResult.meta.changes ?? 0;
+
+  console.log(`retention: deleted=${totalDeleted} batches=${batchesRun} backlog_remaining=${backlogRemaining} cutoff=${cutoff} days=${retentionDays} rollups_deleted=${rollupsDeleted}`);
 }

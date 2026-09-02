@@ -3,14 +3,15 @@ import { createPortal } from 'react-dom';
 
 import type { HomepageUptimeDayStrip, UptimeDayPreview, UptimeRatingLevel } from '../api/types';
 import { useI18n } from '../app/I18nContext';
-import { formatDate } from '../utils/datetime';
+import { formatDate, utcDayStart } from '../utils/datetime';
 import { getUptimeBgClasses, getUptimeTier } from '../utils/uptime';
 
 type DowntimeInterval = { start: number; end: number };
 
-interface UptimeBar30dProps {
+interface UptimeBarProps {
   days?: UptimeDayPreview[] | undefined;
   strip?: HomepageUptimeDayStrip | undefined;
+  todayStartAt?: number;
   ratingLevel?: UptimeRatingLevel;
   maxBars?: number;
   timeZone: string;
@@ -179,16 +180,17 @@ function Tooltip({
   );
 }
 
-export function UptimeBar30d({
+export function UptimeBar({
   days,
   strip,
+  todayStartAt,
   ratingLevel = 3,
   maxBars = 30,
   timeZone,
   onDayClick,
   density = 'default',
   fillMode = 'pad',
-}: UptimeBar30dProps) {
+}: UptimeBarProps) {
   const { locale, t } = useI18n();
   const [tooltip, setTooltip] = useState<{
     day: UptimeDayPreview;
@@ -204,7 +206,7 @@ export function UptimeBar30d({
 
   const displayBars = useMemo(() => {
     if (sourceDays.length === 0) return [];
-
+    
     if (fillMode === 'stretch' && sourceDays.length < maxBars) {
       return Array.from({ length: maxBars }, (_, slot) => {
         const mappedIndex = Math.min(
@@ -216,8 +218,21 @@ export function UptimeBar30d({
       });
     }
 
-    return sourceDays;
-  }, [fillMode, maxBars, sourceDays]);
+    // Align by date
+    const computedTodayStartAt = todayStartAt ?? utcDayStart(Date.now() / 1000);
+    const anchor = computedTodayStartAt || (sourceDays[sourceDays.length - 1]?.day_start_at ?? 0);
+    if (anchor === 0) return sourceDays;
+
+    const map = new Map<number, UptimeDayPreview>();
+    for (const day of sourceDays) {
+      map.set(day.day_start_at, day);
+    }
+
+    return Array.from({ length: maxBars }, (_, i) => {
+      const dayStartAt = anchor - (maxBars - 1 - i) * 86400;
+      return map.get(dayStartAt) ?? null;
+    });
+  }, [fillMode, maxBars, sourceDays, todayStartAt]);
 
   const slots = useMemo<DisplaySlot[]>(() => {
     if (fillMode === 'stretch') {

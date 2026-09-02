@@ -9,7 +9,7 @@ import type {
 import { useI18n } from '../app/I18nContext';
 import { statusLabel } from '../i18n/labels';
 import { HeartbeatBar } from './HeartbeatBar';
-import { UptimeBar30d } from './UptimeBar30d';
+import { UptimeBar } from './UptimeBar';
 import { Badge, Card, StatusDot } from './ui';
 import { formatTime } from '../utils/datetime';
 import {
@@ -194,7 +194,7 @@ export function MonitorCard({
         <div className="mb-2 text-[11px] text-slate-400 dark:text-slate-500">
           {t('monitor_card.availability_30d')}
         </div>
-        <UptimeBar30d
+        <UptimeBar
           days={uptimeDays}
           strip={uptimeDayStrip}
           ratingLevel={ratingLevel}

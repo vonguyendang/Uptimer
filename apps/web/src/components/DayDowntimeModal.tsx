@@ -4,7 +4,7 @@ import type { Incident, MaintenanceWindow, Outage } from '../api/types';
 import { useI18n } from '../app/I18nContext';
 import { Button, MODAL_OVERLAY_CLASS, MODAL_PANEL_CLASS } from './ui';
 import { formatDate, formatTime } from '../utils/datetime';
-import { computeDayDowntimeIntervals, computeIntervalTotalSeconds } from './UptimeBar30d';
+import { computeDayDowntimeIntervals, computeIntervalTotalSeconds } from './UptimeBar';
 
 function formatDay(ts: number, timeZone?: string, locale?: string): string {
   return formatDate(ts, timeZone, locale);

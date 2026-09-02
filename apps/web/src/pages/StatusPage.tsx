@@ -397,7 +397,7 @@ export function StatusPage() {
   const outagesQuery = useQuery({
     queryKey: ['public-monitor-outages', selectedDay?.monitorId, selectedDay?.dayStartAt],
     queryFn: () =>
-      fetchPublicMonitorOutages(selectedDay?.monitorId as number, { range: '30d', limit: 200 }),
+      fetchPublicMonitorOutages(selectedDay?.monitorId as number, { range: '90d', limit: 200 }),
     enabled: selectedDay !== null,
   });
 

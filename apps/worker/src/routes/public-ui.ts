@@ -380,9 +380,8 @@ function jsonNumberLiteral(value: number | null | undefined): string {
 }
 
 function jsonArrayLiteral(value: string | null | undefined): string {
-  if (typeof value !== 'string') return '[]';
-  const trimmed = value.trim();
-  return trimmed.startsWith('[') && trimmed.endsWith(']') ? trimmed : '[]';
+  if (!value || value === '[]' || value === '[null]') return '[]';
+  return value;
 }
 
 function takeBatchRows<T>(result: { results?: unknown[] | undefined } | null | undefined): T[] {
@@ -1247,7 +1246,7 @@ publicUiRoutes.get('/monitors/:id/day-context', async (c) => {
 publicUiRoutes.get('/monitors/:id/outages', async (c) => {
   const includeHiddenMonitors = isAuthorizedStatusAdminRequest(c);
   const id = z.coerce.number().int().positive().parse(c.req.param('id'));
-  const range = z.enum(['30d']).optional().default('30d').parse(c.req.query('range'));
+  const range = z.enum(['30d', '90d']).optional().default('90d').parse(c.req.query('range'));
   const limit = z.coerce.number().int().min(1).max(200).optional().default(200).parse(c.req.query('limit'));
   const cursor = z.coerce.number().int().positive().optional().parse(c.req.query('cursor'));
 
@@ -1268,7 +1267,7 @@ publicUiRoutes.get('/monitors/:id/outages', async (c) => {
 
   const now = Math.floor(Date.now() / 1000);
   const rangeEnd = Math.floor(now / 60) * 60;
-  const rangeStart = Math.max(rangeEnd - 30 * 86400, monitor.created_at);
+  const rangeStart = Math.max(rangeEnd - (range === '30d' ? 30 : 90) * 86400, monitor.created_at);
   const take = limit + 1;
   const sqlBase = `
     SELECT id, started_at, ended_at, initial_error, last_error

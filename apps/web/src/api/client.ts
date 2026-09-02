@@ -358,11 +358,11 @@ export async function fetchPublicUptimeOverview(
 
 export async function fetchPublicMonitorOutages(
   monitorId: number,
-  opts: { range?: '30d'; limit?: number; cursor?: number } = {},
+  opts: { range?: '30d' | '90d'; limit?: number; cursor?: number } = {},
 ): Promise<MonitorOutagesResponse> {
   const auth = getOptionalPublicAuth();
   const qs = new URLSearchParams();
-  qs.set('range', opts.range ?? '30d');
+  qs.set('range', opts.range ?? '90d');
   qs.set('limit', String(opts.limit ?? 200));
   if (opts.cursor !== undefined) qs.set('cursor', String(opts.cursor));
 

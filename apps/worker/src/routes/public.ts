@@ -523,9 +523,8 @@ function jsonNumberLiteral(value: number | null | undefined): string {
 }
 
 function jsonArrayLiteral(value: string | null | undefined): string {
-  if (typeof value !== 'string') return '[]';
-  const trimmed = value.trim();
-  return trimmed.startsWith('[') && trimmed.endsWith(']') ? trimmed : '[]';
+  if (!value || value === '[]' || value === '[null]') return '[]';
+  return value;
 }
 
 async function buildLatencyResponseJson(opts: {
@@ -1826,7 +1825,7 @@ publicRoutes.get('/analytics/uptime', async (c) => {
 publicRoutes.get('/monitors/:id/outages', async (c) => {
   const includeHiddenMonitors = isAuthorizedStatusAdminRequest(c);
   const id = z.coerce.number().int().positive().parse(c.req.param('id'));
-  const range = z.enum(['30d']).optional().default('30d').parse(c.req.query('range'));
+  const range = z.enum(['30d', '90d']).optional().default('90d').parse(c.req.query('range'));
   const limit = z.coerce
     .number()
     .int()
@@ -1854,7 +1853,7 @@ publicRoutes.get('/monitors/:id/outages', async (c) => {
   const now = Math.floor(Date.now() / 1000);
   // Include the current (partial) day so outages from today show up on the status page.
   const rangeEnd = Math.floor(now / 60) * 60;
-  const rangeStart = Math.max(rangeEnd - 30 * 86400, monitor.created_at);
+  const rangeStart = Math.max(rangeEnd - (range === '30d' ? 30 : 90) * 86400, monitor.created_at);
 
   const sqlBase = `
     SELECT id, started_at, ended_at, initial_error, last_error
