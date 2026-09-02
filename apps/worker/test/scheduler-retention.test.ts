@@ -52,6 +52,10 @@ describe('scheduler/retention', () => {
           return { meta: { changes: 0 } };
         },
       },
+      {
+        match: 'delete from monitor_daily_rollups',
+        run: () => ({ meta: { changes: 0 } }),
+      },
     ]);
 
     await runRetention(env, { scheduledTime: Date.now() } as ScheduledController);
@@ -70,6 +74,10 @@ describe('scheduler/retention', () => {
           runCalls.push(args);
           return { meta: { changes: deletes.shift() ?? 0 } };
         },
+      },
+      {
+        match: 'delete from monitor_daily_rollups',
+        run: () => ({ meta: { changes: 0 } }),
       },
     ]);
 
