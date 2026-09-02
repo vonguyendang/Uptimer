@@ -1390,7 +1390,7 @@ function getUpsertMonitorStateStatement(
       consecutive_failures,
       consecutive_successes,
       last_sampled_at
-    ) VALUES ${buildNumberedTuplePlaceholders(rowCount, 10)}
+    ) VALUES ${buildNumberedTuplePlaceholders(rowCount, 9)}
     ON CONFLICT(monitor_id) DO UPDATE SET
       status = excluded.status,
       last_checked_at = excluded.last_checked_at,
