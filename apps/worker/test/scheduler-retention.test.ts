@@ -61,7 +61,7 @@ describe('scheduler/retention', () => {
   });
 
   it('deletes in bounded batches until remaining rows are below the batch size', async () => {
-    const deletes = [5000, 1200];
+    const deletes = [1000, 200];
     const runCalls: unknown[][] = [];
     const env = createEnv([
       {
@@ -84,8 +84,8 @@ describe('scheduler/retention', () => {
     );
     expect(readSettings).toHaveBeenCalledTimes(1);
     expect(runCalls).toHaveLength(2);
-    expect(runCalls[0]?.[1]).toBe(5000);
-    expect(runCalls[1]?.[1]).toBe(5000);
+    expect(runCalls[0]?.[1]).toBe(1000);
+    expect(runCalls[1]?.[1]).toBe(1000);
   });
 
   it('guards against invalid cutoffs', async () => {

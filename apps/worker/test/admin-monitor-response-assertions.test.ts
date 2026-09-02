@@ -21,6 +21,8 @@ type StoredMonitorRow = {
   display_url: string | null;
   interval_sec: number;
   timeout_ms: number;
+  retain_up_check_results: number;
+  up_result_sample_interval_sec: number | null;
   http_method: string | null;
   http_headers_json: string | null;
   http_body: string | null;
@@ -48,6 +50,8 @@ function monitorRowToRaw(row: StoredMonitorRow): unknown[] {
     row.display_url,
     row.interval_sec,
     row.timeout_ms,
+    row.retain_up_check_results,
+    row.up_result_sample_interval_sec,
     row.http_method,
     row.http_headers_json,
     row.http_body,
@@ -94,23 +98,25 @@ function createEnv(monitorsById: Map<number, StoredMonitorRow>): Env {
           display_url: (args[3] as string | null) ?? null,
           interval_sec: Number(args[4]),
           timeout_ms: Number(args[5]),
-          http_method: (args[6] as string | null) ?? null,
-          http_headers_json: (args[7] as string | null) ?? null,
-          http_body: (args[8] as string | null) ?? null,
-          follow_redirects: args[9] === false || args[9] === 0 ? 0 : 1,
-          expected_status_json: (args[10] as string | null) ?? null,
-          response_keyword: (args[11] as string | null) ?? null,
-          response_keyword_mode: (args[12] as StoredMonitorRow['response_keyword_mode']) ?? null,
-          response_forbidden_keyword: (args[13] as string | null) ?? null,
+          retain_up_check_results: Number(args[6]),
+          up_result_sample_interval_sec: (args[7] as number | null) ?? null,
+          http_method: (args[8] as string | null) ?? null,
+          http_headers_json: (args[9] as string | null) ?? null,
+          http_body: (args[10] as string | null) ?? null,
+          follow_redirects: args[11] === false || args[11] === 0 ? 0 : 1,
+          expected_status_json: (args[12] as string | null) ?? null,
+          response_keyword: (args[13] as string | null) ?? null,
+          response_keyword_mode: (args[14] as StoredMonitorRow['response_keyword_mode']) ?? null,
+          response_forbidden_keyword: (args[15] as string | null) ?? null,
           response_forbidden_keyword_mode:
-            (args[14] as StoredMonitorRow['response_forbidden_keyword_mode']) ?? null,
-          group_name: (args[15] as string | null) ?? null,
-          group_sort_order: Number(args[16]),
-          sort_order: Number(args[17]),
-          show_on_status_page: Number(args[18]),
-          is_active: Number(args[19]),
-          created_at: Number(args[20]),
-          updated_at: Number(args[21]),
+            (args[16] as StoredMonitorRow['response_forbidden_keyword_mode']) ?? null,
+          group_name: (args[17] as string | null) ?? null,
+          group_sort_order: Number(args[18]),
+          sort_order: Number(args[19]),
+          show_on_status_page: Number(args[20]),
+          is_active: Number(args[21]),
+          created_at: Number(args[22]),
+          updated_at: Number(args[23]),
         };
         monitorsById.set(row.id, row);
         nextMonitorId += 1;
@@ -345,7 +351,9 @@ describe('admin monitor response assertion routes', () => {
       target: 'example.com:443',
       display_url: null,
       interval_sec: 60,
-      timeout_ms: 5000,
+      timeout_ms: 10000,
+      retain_up_check_results: 1,
+      up_result_sample_interval_sec: null,
       http_method: null,
       http_headers_json: null,
       http_body: null,

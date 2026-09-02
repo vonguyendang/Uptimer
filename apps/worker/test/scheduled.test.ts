@@ -291,6 +291,8 @@ describe('scheduler/scheduled regression', () => {
         assertionCount: 0,
         downCount: 0,
         unknownCount: 0,
+        sampledUpChecksSkipped: 0,
+        monitorStateUpsertsSkipped: 0,
       },
       checksDurMs: 0,
       persistDurMs: 0,
