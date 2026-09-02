@@ -1665,7 +1665,7 @@ async function persistCompletedMonitors(
       const sampleInterval = row.up_result_sample_interval_sec || DEFAULT_UP_RESULT_SAMPLE_INTERVAL_SEC;
       const lastSampledAt = row.last_sampled_at;
 
-      const isSampleIntervalReached = lastSampledAt === null || (checkedAt - lastSampledAt) >= sampleInterval;
+      const isSampleIntervalReached = lastSampledAt == null || (checkedAt - lastSampledAt) >= sampleInterval;
       const shouldPersistUpSample = retainUp && isSampleIntervalReached;
       
       const hasStatusChanged = prevStatus !== next.status;
@@ -1679,7 +1679,7 @@ async function persistCompletedMonitors(
         diagnostics.sampledUpChecksSkipped = (diagnostics.sampledUpChecksSkipped ?? 0) + 1;
       }
 
-      const isHeartbeatReached = row.last_checked_at === null || (checkedAt - row.last_checked_at) >= STATE_HEARTBEAT_INTERVAL_SEC;
+      const isHeartbeatReached = row.last_checked_at == null || (checkedAt - row.last_checked_at) >= STATE_HEARTBEAT_INTERVAL_SEC;
       const shouldUpsertMonitorState = hasStatusChanged || hasErrorChanged || shouldPersistUpSample || isHeartbeatReached;
 
       if (shouldUpsertMonitorState) {
