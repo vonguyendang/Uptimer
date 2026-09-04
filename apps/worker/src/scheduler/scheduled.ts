@@ -1638,7 +1638,7 @@ async function persistCompletedMonitors(
     sampledUpChecksSkipped?: number;
     monitorStateUpsertsSkipped?: number;
   }
-): Promise<void> {
+): Promise<Set<number>> {
   const cached = persistStatementTemplatesByDb.get(db);
   const templates = cached ?? {
     insertCheckResultByRowCount: new Map<number, D1PreparedStatement>(),
@@ -1650,6 +1650,8 @@ async function persistCompletedMonitors(
   if (!cached) {
     persistStatementTemplatesByDb.set(db, templates);
   }
+
+  const persistedIds = new Set<number>();
 
   for (let i = 0; i < completed.length; i += PERSIST_BATCH_SIZE) {
     const chunk = completed.slice(i, i + PERSIST_BATCH_SIZE);
@@ -1675,6 +1677,7 @@ async function persistCompletedMonitors(
       const shouldInsertCheckResult = isNotUp || hasStatusChanged || hasErrorChanged || shouldPersistUpSample;
       if (shouldInsertCheckResult) {
         checkResultsToInsert.push(monitor);
+        persistedIds.add(monitor.row.id);
       } else if (diagnostics) {
         diagnostics.sampledUpChecksSkipped = (diagnostics.sampledUpChecksSkipped ?? 0) + 1;
       }
@@ -1684,6 +1687,7 @@ async function persistCompletedMonitors(
 
       if (shouldUpsertMonitorState) {
         monitorStatesToUpsert.push({ completed: monitor, sampled: shouldPersistUpSample });
+        persistedIds.add(monitor.row.id);
       } else if (diagnostics) {
         diagnostics.monitorStateUpsertsSkipped = (diagnostics.monitorStateUpsertsSkipped ?? 0) + 1;
       }
@@ -1711,6 +1715,8 @@ async function persistCompletedMonitors(
       await db.batch(statements);
     }
   }
+
+  return persistedIds;
 }
 
 export async function runPersistedMonitorBatch(opts: {
@@ -1757,6 +1763,7 @@ export async function runPersistedMonitorBatch(opts: {
     .map((result) => result.value);
 
   let persistDurMs = 0;
+  let persistedIds = new Set<number>();
   const diagnosticsObj: { sampledUpChecksSkipped?: number; monitorStateUpsertsSkipped?: number } = {};
   if (completed.length > 0) {
     if (opts.beforePersist) {
@@ -1768,12 +1775,12 @@ export async function runPersistedMonitorBatch(opts: {
     }
     const persistStart = performance.now();
     if (opts.trace) {
-      await opts.trace.timeAsync(
+      persistedIds = await opts.trace.timeAsync(
         'batch_persist_completed',
         async () => await persistCompletedMonitors(opts.db, completed, diagnosticsObj),
       );
     } else {
-      await persistCompletedMonitors(opts.db, completed, diagnosticsObj);
+      persistedIds = await persistCompletedMonitors(opts.db, completed, diagnosticsObj);
     }
     persistDurMs = performance.now() - persistStart;
 
@@ -1792,9 +1799,10 @@ export async function runPersistedMonitorBatch(opts: {
   }
 
   // Promise.allSettled preserves input order, so keep the existing monitor ordering here.
+  const persistedMonitors = completed.filter((m) => persistedIds.has(m.row.id));
   const runtimeUpdates = opts.trace
-    ? opts.trace.time('batch_runtime_updates', () => completed.map(toMonitorRuntimeUpdate))
-    : completed.map(toMonitorRuntimeUpdate);
+    ? opts.trace.time('batch_runtime_updates', () => persistedMonitors.map(toMonitorRuntimeUpdate))
+    : persistedMonitors.map(toMonitorRuntimeUpdate);
 
   const stats = summarizeCompletedMonitors(completed, rejectedCount);
   stats.sampledUpChecksSkipped = diagnosticsObj.sampledUpChecksSkipped ?? 0;
