@@ -18,7 +18,11 @@ const UPSERT_ANALYTICS_OVERVIEW_SNAPSHOT_SQL = `
     generated_at = excluded.generated_at,
     body_json = excluded.body_json,
     updated_at = excluded.updated_at
-  WHERE excluded.generated_at >= public_snapshots.generated_at
+  WHERE excluded.generated_at > public_snapshots.generated_at
+    OR (
+      excluded.generated_at = public_snapshots.generated_at
+      AND excluded.body_json != public_snapshots.body_json
+    )
 `;
 const ANALYTICS_OVERVIEW_REFRESH_LOCK_PREFIX = 'snapshot:analytics-overview:';
 const ANALYTICS_OVERVIEW_REFRESH_LEASE_SECONDS = 5 * 60;
