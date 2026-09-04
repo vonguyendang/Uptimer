@@ -18,7 +18,11 @@ const UPSERT_STATUS_SQL = `
     generated_at = excluded.generated_at,
     body_json = excluded.body_json,
     updated_at = excluded.updated_at
-  WHERE excluded.generated_at >= public_snapshots.generated_at
+  WHERE excluded.generated_at > public_snapshots.generated_at
+    OR (
+      excluded.generated_at = public_snapshots.generated_at
+      AND excluded.body_json != public_snapshots.body_json
+    )
     OR public_snapshots.generated_at > ?5
 `;
 const UPSERT_STATUS_AFTER_HOMEPAGE_SQL = `
@@ -36,7 +40,11 @@ const UPSERT_STATUS_AFTER_HOMEPAGE_SQL = `
     body_json = excluded.body_json,
     updated_at = excluded.updated_at
   WHERE (
-      excluded.generated_at >= public_snapshots.generated_at
+      excluded.generated_at > public_snapshots.generated_at
+      OR (
+        excluded.generated_at = public_snapshots.generated_at
+        AND excluded.body_json != public_snapshots.body_json
+      )
       OR public_snapshots.generated_at > ?5
     )
     AND EXISTS (
@@ -69,7 +77,11 @@ const UPSERT_STATUS_AFTER_HOMEPAGE_AND_LEASE_SQL = `
     body_json = excluded.body_json,
     updated_at = excluded.updated_at
   WHERE (
-      excluded.generated_at >= public_snapshots.generated_at
+      excluded.generated_at > public_snapshots.generated_at
+      OR (
+        excluded.generated_at = public_snapshots.generated_at
+        AND excluded.body_json != public_snapshots.body_json
+      )
       OR public_snapshots.generated_at > ?5
     )
     AND EXISTS (

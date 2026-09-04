@@ -164,7 +164,11 @@ const UPSERT_RAW_PUBLIC_SNAPSHOT_SQL = `
     generated_at = excluded.generated_at,
     body_json = excluded.body_json,
     updated_at = excluded.updated_at
-  WHERE excluded.generated_at >= public_snapshots.generated_at
+  WHERE excluded.generated_at > public_snapshots.generated_at
+    OR (
+      excluded.generated_at = public_snapshots.generated_at
+      AND excluded.body_json != public_snapshots.body_json
+    )
     OR public_snapshots.generated_at > ?5
 `;
 type PublicSnapshotPublishKey = 'homepage' | 'homepage:artifact' | 'status';

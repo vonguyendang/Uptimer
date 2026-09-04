@@ -11,7 +11,11 @@ const UPSERT_FRAGMENT_SQL = `
     generated_at = excluded.generated_at,
     body_json = excluded.body_json,
     updated_at = excluded.updated_at
-  WHERE excluded.generated_at >= public_snapshot_fragments.generated_at
+  WHERE excluded.generated_at > public_snapshot_fragments.generated_at
+    OR (
+      excluded.generated_at = public_snapshot_fragments.generated_at
+      AND excluded.body_json != public_snapshot_fragments.body_json
+    )
 `;
 
 const READ_FRAGMENTS_SQL = `
